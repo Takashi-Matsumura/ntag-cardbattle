@@ -1,26 +1,24 @@
 {
-  "name": "ntag-card-battle",
+  "name": "nfc-card-battle",
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+    "dev:server": "pnpm --filter @nfc-card-battle/server dev",
+    "dev:mobile": "pnpm --filter @nfc-card-battle/mobile start",
+    "build:server": "pnpm --filter @nfc-card-battle/server build",
+    "db:migrate": "pnpm --filter @nfc-card-battle/server db:migrate",
+    "db:seed": "pnpm --filter @nfc-card-battle/server db:seed",
+    "db:push": "pnpm --filter @nfc-card-battle/server db:push",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down"
   },
-  "dependencies": {
-    "next": "16.1.6",
-    "react": "19.2.3",
-    "react-dom": "19.2.3"
-  },
-  "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.1.6",
-    "tailwindcss": "^4",
-    "typescript": "^5"
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "esbuild",
+      "prisma",
+      "sharp"
+    ]
   }
 }

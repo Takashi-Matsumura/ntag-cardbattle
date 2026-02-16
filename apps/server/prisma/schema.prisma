@@ -1,0 +1,28 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// キャラクターテンプレート（管理者が事前に作成）
+model Character {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  hp        Int
+  attack    Int
+  defense   Int
+  imageUrl  String?
+  cards     Card[]
+  createdAt DateTime @default(now())
+}
+
+// NFCカード（プレイヤーが登録、管理者がキャラ割当）
+model Card {
+  id           String     @id // NTAG UID
+  character    Character? @relation(fields: [characterId], references: [id])
+  characterId  Int?
+  registeredAt DateTime   @default(now())
+}
