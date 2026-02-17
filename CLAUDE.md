@@ -32,6 +32,13 @@ pnpm db:studio                # Prisma Studio起動
 - モバイルアプリは NativeWind（className）でスタイリング
 - 管理画面（Next.js）は Tailwind CSS でスタイリング
 - StyleSheet と className を混在させない
+- `.npmrc` で `node-linker=hoisted` を使用（Expo/Metro互換のため）
+- ngrokの無料版ではAPIに `ngrok-skip-browser-warning: true` ヘッダーが必要（モバイルアプリ側で対応済み）
+
+## カスタムコマンド
+
+- `/dev-tunnel` — 開発環境フルセットアップ（Docker + サーバ + ngrokトンネル + Metro）
+- `/close-dev` — 開発環境の全プロセス停止（Metro → ngrok → サーバ → Docker）
 
 ## 技術スタック
 
@@ -42,3 +49,24 @@ pnpm db:studio                # Prisma Studio起動
 | リアルタイム通信 | Socket.io |
 | データベース | PostgreSQL + Prisma |
 | インフラ | Docker Compose |
+
+## 開発環境の構成
+
+テザリング環境などローカルネットワークが使えない場合、ngrokトンネルを使用する:
+
+- PostgreSQL: Docker (port 5432)
+- Next.js + Socket.io: port 3000
+- ngrok: port 3000 → public URL (apps/mobile/.env に設定)
+- Expo Metro: port 8081 (--tunnel モード)
+
+## ファイル構成の要点
+
+- `apps/server/src/server.ts` — カスタムHTTPサーバ（Next.js + Socket.io統合）
+- `apps/server/src/game/engine.ts` — ダメージ計算エンジン
+- `apps/server/src/game/room-manager.ts` — ルーム管理
+- `apps/server/src/game/events.ts` — Socket.ioイベントハンドラ
+- `apps/mobile/app/battle/tutorial.tsx` — チュートリアルバトル（ローカル処理）
+- `apps/mobile/app/battle/[roomId].tsx` — 対人バトル（Socket.io）
+- `apps/mobile/lib/nfc.ts` — NFC読み取りユーティリティ
+- `apps/mobile/lib/socket.ts` — Socket.ioクライアント
+- `packages/shared/src/types.ts` — 共有型定義
