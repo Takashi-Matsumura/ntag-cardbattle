@@ -40,11 +40,29 @@ pnpm dev:server
 
 `apps/mobile/.env` の `EXPO_PUBLIC_SERVER_URL` を、取得したローカルIPアドレスを使って `http://<ローカルIP>:3000` に更新してください。
 
-### 7. Expo Metro バンドラ起動 (バックグラウンド)
+### 7. 実機iPhoneにビルド＆インストール
+
+NFC機能を使うため、実機iPhoneへのビルドが必要です。
+
+まず、接続されているデバイスを確認してください:
 
 ```
-cd apps/mobile && npx expo start --lan
+xcrun xctrace list devices 2>&1 | head -5
 ```
+
+ユーザーに以下のデバイスからどちらにビルドするか選択してもらってください:
+
+- **iPhone15 mats** — UDID: 00008120-000C2D0E1EF1A01E
+- **iPhone SE2** — UDID: 00008030-001155AA2246402E
+
+選択されたデバイスのUDIDを使って、実機ビルドを実行してください:
+
+```
+cd apps/mobile && npx expo run:ios --device "<選択されたUDID>"
+```
+
+このコマンドはビルドに数分かかります。タイムアウトを長め（600秒）に設定してください。
+ビルド完了後、アプリが実機に自動インストールされて起動します。
 
 ### 8. 完了レポート
 
@@ -55,5 +73,5 @@ cd apps/mobile && npx expo start --lan
 - ローカルIP: (取得したIP)
 - サーバURL: http://<ローカルIP>:3000
 - 管理画面: http://<ローカルIP>:3000/admin/cards
-- Metro バンドラ: 起動状態（LANモード）
+- 実機ビルド: ビルド先デバイス名
 - `apps/mobile/.env` に設定したURL
