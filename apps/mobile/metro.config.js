@@ -8,6 +8,7 @@ const monorepoRoot = path.resolve(projectRoot, "../..");
 const config = getDefaultConfig(projectRoot);
 
 // モノレポ対応: ワークスペースパッケージを解決
+config.projectRoot = projectRoot;
 config.watchFolders = [monorepoRoot];
 config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, "node_modules"),

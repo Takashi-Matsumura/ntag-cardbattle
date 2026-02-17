@@ -1,23 +1,29 @@
 import { Tabs } from "expo-router";
-import { Text } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 
 export default function TabLayout() {
   return (
     <Tabs
+      sceneContainerStyle={{ backgroundColor: "#0f0f1a" }}
       screenOptions={{
-        headerStyle: { backgroundColor: "#1a1a2e" },
-        headerTintColor: "#fff",
-        tabBarStyle: { backgroundColor: "#1a1a2e", borderTopColor: "#2a2a4e" },
-        tabBarActiveTintColor: "#e94560",
-        tabBarInactiveTintColor: "#888",
+        headerStyle: { backgroundColor: "#0f0f1a" },
+        headerTintColor: "#f0f0f0",
+        sceneStyle: { backgroundColor: "#0f0f1a" },
+        tabBarStyle: {
+          backgroundColor: "#0f0f1a",
+          borderTopColor: "#1a1a2e",
+          borderTopWidth: 0.5,
+        },
+        tabBarActiveTintColor: "#6c5ce7",
+        tabBarInactiveTintColor: "#555",
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: "ホーム",
-          tabBarIcon: ({ color }) => (
-            <Text style={{ color, fontSize: 20 }}>⚔️</Text>
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="game-controller-outline" size={size} color={color} />
           ),
         }}
       />
@@ -25,8 +31,8 @@ export default function TabLayout() {
         name="mycard"
         options={{
           title: "マイカード",
-          tabBarIcon: ({ color }) => (
-            <Text style={{ color, fontSize: 20 }}>🃏</Text>
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="card-outline" size={size} color={color} />
           ),
         }}
       />

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { View, Text, TouchableOpacity, Alert } from "react-native";
 import { useRouter } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import { Ionicons } from "@expo/vector-icons";
 import { socket } from "@/lib/socket";
 
 export default function HomeScreen() {
@@ -68,7 +69,7 @@ export default function HomeScreen() {
   // QRスキャン中
   if (scanning) {
     return (
-      <View className="flex-1">
+      <View className="flex-1 bg-black">
         <CameraView
           className="flex-1"
           barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
@@ -76,41 +77,52 @@ export default function HomeScreen() {
         />
         <TouchableOpacity
           onPress={() => setScanning(false)}
-          className="absolute bottom-12 self-center bg-red-500 px-8 py-3 rounded-full"
+          className="absolute bottom-12 self-center bg-white/20 px-8 py-3 rounded-full flex-row items-center"
         >
-          <Text className="text-white font-bold text-lg">キャンセル</Text>
+          <Ionicons name="close" size={20} color="#fff" />
+          <Text className="text-white font-semibold text-base ml-2">
+            キャンセル
+          </Text>
         </TouchableOpacity>
       </View>
     );
   }
 
   return (
-    <View className="flex-1 items-center justify-center p-6">
-      <Text className="text-white text-3xl font-bold mb-2">
-        NFC Card Battle
-      </Text>
-      <Text className="text-gray-400 mb-12">
-        カードをかざしてバトル開始！
-      </Text>
+    <View className="flex-1 items-center justify-center px-6">
+      {/* タイトル */}
+      <View className="items-center mb-16">
+        <Ionicons name="flash" size={48} color="#6c5ce7" />
+        <Text className="text-white text-3xl font-bold mt-3 tracking-wider">
+          NFC BATTLE
+        </Text>
+        <Text className="text-gray-500 text-sm mt-1">
+          カードをかざしてバトル開始
+        </Text>
+      </View>
 
       {/* ルーム作成ボタン */}
       <TouchableOpacity
         onPress={createRoom}
-        className="bg-red-500 w-full py-4 rounded-xl mb-4"
+        className="bg-[#6c5ce7] w-full py-4 rounded-2xl mb-3 flex-row items-center justify-center"
       >
-        <Text className="text-white text-center font-bold text-lg">
+        <Ionicons name="add-circle-outline" size={22} color="#fff" />
+        <Text className="text-white font-bold text-base ml-2">
           ルーム作成
         </Text>
       </TouchableOpacity>
 
       {/* QRコード表示 */}
       {roomCode && (
-        <View className="bg-white rounded-xl p-6 items-center mb-4 w-full">
-          <Text className="text-gray-800 font-bold mb-2">
-            ルームコード: {roomCode}
+        <View className="bg-[#1a1a2e] rounded-2xl p-6 items-center mb-3 w-full border border-[#2a2a4e]">
+          <Text className="text-gray-400 text-xs mb-1">ルームコード</Text>
+          <Text className="text-white font-bold text-2xl tracking-widest mb-4">
+            {roomCode}
           </Text>
-          <QRCodeDisplay value={`nfc-battle://join/${roomCode}`} />
-          <Text className="text-gray-500 text-sm mt-2">
+          <View className="bg-white rounded-xl p-4">
+            <QRCodeDisplay value={`nfc-battle://join/${roomCode}`} />
+          </View>
+          <Text className="text-gray-500 text-xs mt-3">
             相手にQRコードを見せてください
           </Text>
         </View>
@@ -119,10 +131,29 @@ export default function HomeScreen() {
       {/* QRスキャンボタン */}
       <TouchableOpacity
         onPress={startScan}
-        className="bg-blue-500 w-full py-4 rounded-xl"
+        className="bg-[#1a1a2e] w-full py-4 rounded-2xl border border-[#2a2a4e] flex-row items-center justify-center"
       >
-        <Text className="text-white text-center font-bold text-lg">
+        <Ionicons name="qr-code-outline" size={22} color="#6c5ce7" />
+        <Text className="text-[#6c5ce7] font-bold text-base ml-2">
           QRスキャンで参加
+        </Text>
+      </TouchableOpacity>
+
+      {/* 区切り */}
+      <View className="flex-row items-center w-full my-6">
+        <View className="flex-1 h-px bg-[#2a2a4e]" />
+        <Text className="text-gray-600 text-xs mx-4">or</Text>
+        <View className="flex-1 h-px bg-[#2a2a4e]" />
+      </View>
+
+      {/* チュートリアル */}
+      <TouchableOpacity
+        onPress={() => router.push("/battle/tutorial")}
+        className="bg-[#1a1a2e] w-full py-4 rounded-2xl border border-[#2a2a4e] flex-row items-center justify-center"
+      >
+        <Ionicons name="school-outline" size={22} color="#888" />
+        <Text className="text-gray-400 font-bold text-base ml-2">
+          チュートリアル
         </Text>
       </TouchableOpacity>
     </View>
@@ -133,13 +164,11 @@ export default function HomeScreen() {
 function QRCodeDisplay({ value }: { value: string }) {
   try {
     const QRCode = require("react-native-qrcode-svg").default;
-    return <QRCode value={value} size={200} />;
+    return <QRCode value={value} size={180} />;
   } catch {
     return (
-      <View className="w-48 h-48 bg-gray-200 items-center justify-center rounded">
-        <Text className="text-gray-500 text-sm text-center">
-          QRコード{"\n"}{value}
-        </Text>
+      <View className="w-44 h-44 bg-gray-100 items-center justify-center rounded">
+        <Text className="text-gray-400 text-xs text-center">{value}</Text>
       </View>
     );
   }
