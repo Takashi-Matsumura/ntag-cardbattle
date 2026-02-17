@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 interface Character {
   id: number;
@@ -101,6 +102,9 @@ export default function CardsPage() {
 
   return (
     <main className="max-w-4xl mx-auto p-8">
+      <Link href="/" className="text-blue-600 hover:underline text-sm mb-4 inline-block">
+        ← ホームに戻る
+      </Link>
       <h1 className="text-3xl font-bold mb-8">カード管理</h1>
 
       {/* --- キャラクター一覧 --- */}
