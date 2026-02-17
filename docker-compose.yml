@@ -10,15 +10,6 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
-  server:
-    build: ./apps/server
-    ports:
-      - "3000:3000"
-    environment:
-      DATABASE_URL: postgresql://battle:battle_dev@postgres:5432/nfc_battle
-      NODE_ENV: development
-    depends_on:
-      - postgres
 
 volumes:
   pgdata:

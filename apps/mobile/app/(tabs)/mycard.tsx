@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
-import { View, Text, TouchableOpacity, Alert, FlatList } from "react-native";
+import { View, Text, TouchableOpacity, Alert, FlatList, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
 import type { Card } from "@nfc-card-battle/shared";
+import { getCharacterImageUrl } from "@nfc-card-battle/shared";
 import { initNfc, readNfcUid } from "@/lib/nfc";
 
 const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL || "http://localhost:3000";
@@ -70,54 +71,78 @@ export default function MyCardScreen() {
     }
   };
 
-  const renderCard = ({ item }: { item: Card }) => (
-    <View className="bg-[#1a1a2e] rounded-2xl p-4 mb-3 border border-[#2a2a4e]">
-      <View className="flex-row items-center justify-between">
-        <View className="flex-row items-center">
-          <View className="w-10 h-10 rounded-full bg-[#6c5ce7]/20 items-center justify-center mr-3">
-            <Ionicons
-              name={item.character ? "shield-checkmark" : "help-circle-outline"}
-              size={20}
-              color={item.character ? "#6c5ce7" : "#555"}
-            />
-          </View>
-          <View>
-            {item.character ? (
-              <Text className="text-white text-base font-bold">
-                {item.character.name}
+  const renderCard = ({ item }: { item: Card }) => {
+    const imageUrl = item.character
+      ? getCharacterImageUrl(SERVER_URL, item.character.id, "idle")
+      : null;
+
+    return (
+      <View className="bg-[#1a1a2e] rounded-2xl p-4 mb-3 border border-[#2a2a4e] flex-row">
+        {/* 左側: カード情報 */}
+        <View className="flex-1">
+          <View className="flex-row items-center">
+            <View className="w-10 h-10 rounded-full bg-[#6c5ce7]/20 items-center justify-center mr-3">
+              <Ionicons
+                name={item.character ? "shield-checkmark" : "help-circle-outline"}
+                size={20}
+                color={item.character ? "#6c5ce7" : "#555"}
+              />
+            </View>
+            <View>
+              {item.character ? (
+                <Text className="text-white text-base font-bold">
+                  {item.character.name}
+                </Text>
+              ) : (
+                <Text className="text-amber-400 text-sm font-medium">
+                  キャラクター未割当
+                </Text>
+              )}
+              <Text className="text-gray-600 text-xs font-mono mt-0.5">
+                {item.id}
               </Text>
+            </View>
+          </View>
+          {item.character && (
+            <View className="flex-row mt-3 gap-3 ml-13">
+              <View className="bg-red-500/10 px-3 py-1.5 rounded-lg">
+                <Text className="text-red-400 text-xs font-bold">
+                  HP {item.character.hp}
+                </Text>
+              </View>
+              <View className="bg-orange-500/10 px-3 py-1.5 rounded-lg">
+                <Text className="text-orange-400 text-xs font-bold">
+                  攻撃 {item.character.attack}
+                </Text>
+              </View>
+              <View className="bg-blue-500/10 px-3 py-1.5 rounded-lg">
+                <Text className="text-blue-400 text-xs font-bold">
+                  防御 {item.character.defense}
+                </Text>
+              </View>
+            </View>
+          )}
+        </View>
+
+        {/* 右側: キャラクター画像 */}
+        {item.character && (
+          <View className="w-20 h-20 rounded-xl bg-[#6c5ce7]/10 items-center justify-center ml-3 overflow-hidden">
+            {imageUrl ? (
+              <Image
+                source={{ uri: imageUrl }}
+                className="w-full h-full"
+                resizeMode="contain"
+                defaultSource={undefined}
+                onError={() => {}}
+              />
             ) : (
-              <Text className="text-amber-400 text-sm font-medium">
-                キャラクター未割当
-              </Text>
+              <Ionicons name="person-outline" size={32} color="#6c5ce7" />
             )}
-            <Text className="text-gray-600 text-xs font-mono mt-0.5">
-              {item.id}
-            </Text>
           </View>
-        </View>
+        )}
       </View>
-      {item.character && (
-        <View className="flex-row mt-3 gap-3 ml-13">
-          <View className="bg-red-500/10 px-3 py-1.5 rounded-lg">
-            <Text className="text-red-400 text-xs font-bold">
-              HP {item.character.hp}
-            </Text>
-          </View>
-          <View className="bg-orange-500/10 px-3 py-1.5 rounded-lg">
-            <Text className="text-orange-400 text-xs font-bold">
-              ATK {item.character.attack}
-            </Text>
-          </View>
-          <View className="bg-blue-500/10 px-3 py-1.5 rounded-lg">
-            <Text className="text-blue-400 text-xs font-bold">
-              DEF {item.character.defense}
-            </Text>
-          </View>
-        </View>
-      )}
-    </View>
-  );
+    );
+  };
 
   return (
     <View className="flex-1 px-6 pt-4">

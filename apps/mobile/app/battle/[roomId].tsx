@@ -1,40 +1,84 @@
 import { useState, useEffect, useRef } from "react";
-import { View, Text, TouchableOpacity, Alert } from "react-native";
+import { View, Text, TouchableOpacity, Alert, Animated } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import type {
   Character,
+  CharacterImageType,
   TurnResult,
   BattleState,
   ActionType,
+  TurnType,
+  ResultType,
 } from "@nfc-card-battle/shared";
 import { TURN_TIME_LIMIT } from "@nfc-card-battle/shared";
 import { socket } from "@/lib/socket";
 import { readNfcUid } from "@/lib/nfc";
+import { BattleCard } from "@/components/BattleCard";
 
 type Phase = "scan" | "waiting" | "battle" | "finished";
+
+// チュートリアルと同じresultData形式
+interface ResultData {
+  header: string;
+  damage: number;
+  label: string;
+  description: string;
+  type: ResultType | "take";
+}
+
+const getTip = (isMyAttack: boolean, turn: number): string => {
+  if (isMyAttack) {
+    if (turn <= 1) return "「攻撃」か「必殺技」を選びましょう";
+    if (turn <= 3) return "必殺技は威力が高いがクールダウンあり";
+    return "相手のHPを見て攻撃方法を選ぼう";
+  } else {
+    if (turn <= 2) return "「防御」か「カウンター」を選びましょう";
+    if (turn <= 4) return "カウンターは成功率30%で大ダメージ";
+    return "防御すればダメージを大きく減らせる";
+  }
+};
 
 export default function BattleScreen() {
   const { roomId } = useLocalSearchParams<{ roomId: string }>();
   const router = useRouter();
 
   const [phase, setPhase] = useState<Phase>("scan");
+  const [scanning, setScanning] = useState(false);
   const [myCard, setMyCard] = useState<Character | null>(null);
   const [opponentCard, setOpponentCard] = useState<Character | null>(null);
   const [myHp, setMyHp] = useState(0);
   const [opponentHp, setOpponentHp] = useState(0);
   const [turn, setTurn] = useState(0);
+  const [turnType, setTurnType] = useState<TurnType>("A_attacks");
   const [timer, setTimer] = useState(TURN_TIME_LIMIT);
-  const [lastResult, setLastResult] = useState<TurnResult | null>(null);
-  const [winner, setWinner] = useState<"A" | "B" | null>(null);
   const [actionSelected, setActionSelected] = useState(false);
   const [myRole, setMyRole] = useState<"A" | "B" | null>(null);
+  const [mySpecialCd, setMySpecialCd] = useState(0);
+  const [winner, setWinner] = useState<"A" | "B" | null>(null);
+  const [myImageType, setMyImageType] = useState<CharacterImageType>("idle");
+  const [opponentImageType, setOpponentImageType] = useState<CharacterImageType>("idle");
+  const [showResult, setShowResult] = useState(false);
+  const [resultData, setResultData] = useState<ResultData | null>(null);
+
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const myRoleRef = useRef<"A" | "B" | null>(null);
+  const damageAnim = useRef(new Animated.Value(0)).current;
+  const numberAnim = useRef(new Animated.Value(0)).current;
+  const shakeAnim = useRef(new Animated.Value(0)).current;
+  const fieldAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    myRoleRef.current = myRole;
+  }, [myRole]);
 
   useEffect(() => {
     // カード登録成功
-    const onCardRegistered = ({ card }: { card: Character }) => {
+    const onCardRegistered = ({ card, role }: { card: Character; role: "A" | "B" }) => {
       setMyCard(card);
       setMyHp(card.hp);
+      setMyRole(role);
+      myRoleRef.current = role;
       setPhase("waiting");
     };
 
@@ -44,19 +88,40 @@ export default function BattleScreen() {
       setOpponentHp(card.hp);
     };
 
-    // バトル開始
+    // バトル開始（各ターンの開始）
     const onBattleStart = ({
       turn: t,
       timeLimit,
+      turnType: tt,
+      role,
+      specialCd,
     }: {
       turn: number;
       timeLimit: number;
+      turnType: TurnType;
+      role: "A" | "B";
+      specialCd: number;
     }) => {
       setPhase("battle");
       setTurn(t);
+      setTurnType(tt);
       setTimer(timeLimit);
       setActionSelected(false);
-      setLastResult(null);
+      setShowResult(false);
+      setResultData(null);
+      setMyRole(role);
+      myRoleRef.current = role;
+      setMySpecialCd(specialCd);
+      setMyImageType("idle");
+      setOpponentImageType("idle");
+
+      // フィールドアニメーション
+      fieldAnim.setValue(0);
+      Animated.timing(fieldAnim, {
+        toValue: 1,
+        duration: 400,
+        useNativeDriver: true,
+      }).start();
 
       // タイマー開始
       if (timerRef.current) clearInterval(timerRef.current);
@@ -74,16 +139,102 @@ export default function BattleScreen() {
     // ターン結果
     const onTurnResult = (result: TurnResult) => {
       if (timerRef.current) clearInterval(timerRef.current);
-      setLastResult(result);
 
-      // 自分のロールに基づいてHP更新
-      if (myRole === "A") {
-        setMyHp(result.playerA.hpAfter);
-        setOpponentHp(result.playerB.hpAfter);
+      const role = myRoleRef.current;
+      const isAttacker = result.attackerRole === role;
+      const myData = role === "A" ? result.playerA : result.playerB;
+      const opData = role === "A" ? result.playerB : result.playerA;
+
+      setMyHp(myData.hpAfter);
+      setOpponentHp(opData.hpAfter);
+      setMySpecialCd(myData.specialCd);
+
+      // resultDataを構築（チュートリアルと同じ形式）
+      const rd = buildResultData(result, isAttacker);
+      setResultData(rd);
+
+      // 画像タイプ更新
+      if (isAttacker) {
+        // 自分が攻撃側
+        if (result.resultType === "counter_ok") {
+          setMyImageType("damaged");
+          setOpponentImageType("attack");
+        } else if (result.resultType === "penalty") {
+          setMyImageType("damaged");
+          setOpponentImageType("attack");
+        } else {
+          setMyImageType(result.attackerAction === "special" ? "special" : "attack");
+          if (result.damageToDefender > 0) {
+            setOpponentImageType("damaged");
+          } else {
+            setOpponentImageType("defend");
+          }
+        }
       } else {
-        setMyHp(result.playerB.hpAfter);
-        setOpponentHp(result.playerA.hpAfter);
+        // 自分が防御側
+        if (result.resultType === "counter_ok") {
+          setMyImageType("attack");
+          setOpponentImageType("damaged");
+        } else if (result.resultType === "no_guard") {
+          setMyImageType("damaged");
+          setOpponentImageType(result.attackerAction === "special" ? "special" : "attack");
+        } else if (result.resultType === "counter_fail") {
+          setMyImageType("damaged");
+          setOpponentImageType(result.attackerAction === "special" ? "special" : "attack");
+        } else if (result.resultType === "perfect") {
+          setMyImageType("defend");
+          setOpponentImageType(result.attackerAction === "special" ? "special" : "attack");
+        } else if (result.resultType === "defend") {
+          setMyImageType(result.damageToDefender > 0 ? "damaged" : "defend");
+          setOpponentImageType(result.attackerAction === "special" ? "special" : "attack");
+        } else {
+          setMyImageType("idle");
+          setOpponentImageType("idle");
+        }
       }
+
+      // アニメーション
+      damageAnim.setValue(0);
+      Animated.timing(damageAnim, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      }).start();
+
+      setTimeout(() => {
+        setShowResult(true);
+
+        numberAnim.setValue(0);
+        Animated.sequence([
+          Animated.timing(numberAnim, {
+            toValue: 1.4,
+            duration: 150,
+            useNativeDriver: true,
+          }),
+          Animated.spring(numberAnim, {
+            toValue: 1,
+            friction: 4,
+            tension: 120,
+            useNativeDriver: true,
+          }),
+        ]).start();
+
+        // ダメージを受けた場合のシェイク
+        const tookDamage = isAttacker
+          ? result.damageToAttacker > 0
+          : result.damageToDefender > 0;
+        if (tookDamage) {
+          shakeAnim.setValue(0);
+          Animated.sequence([
+            Animated.timing(shakeAnim, { toValue: 10, duration: 50, useNativeDriver: true }),
+            Animated.timing(shakeAnim, { toValue: -10, duration: 50, useNativeDriver: true }),
+            Animated.timing(shakeAnim, { toValue: 8, duration: 50, useNativeDriver: true }),
+            Animated.timing(shakeAnim, { toValue: -8, duration: 50, useNativeDriver: true }),
+            Animated.timing(shakeAnim, { toValue: 4, duration: 50, useNativeDriver: true }),
+            Animated.timing(shakeAnim, { toValue: 0, duration: 50, useNativeDriver: true }),
+          ]).start();
+        }
+      }, 600);
     };
 
     // バトル終了
@@ -100,6 +251,7 @@ export default function BattleScreen() {
 
     // 相手切断
     const onDisconnected = () => {
+      if (timerRef.current) clearInterval(timerRef.current);
       Alert.alert("通知", "相手が切断しました", [
         { text: "OK", onPress: () => router.back() },
       ]);
@@ -128,30 +280,24 @@ export default function BattleScreen() {
       socket.off("opponent_disconnected", onDisconnected);
       socket.off("error", onError);
     };
-  }, [myRole]);
-
-  // ロール推定（ルーム作成者=A、参加者=B）
-  useEffect(() => {
-    // opponent_joined を受信した側がA、join_room した側がB
-    const onOpponentJoined = () => setMyRole("A");
-    socket.on("opponent_joined", onOpponentJoined);
-
-    // join_room した場合はB
-    if (!myRole) setMyRole("B");
-
-    return () => {
-      socket.off("opponent_joined", onOpponentJoined);
-    };
   }, []);
 
   // NFCスキャン
   const scanCard = async () => {
-    const uid = await readNfcUid();
-    if (!uid) {
-      Alert.alert("エラー", "カードを読み取れませんでした");
-      return;
+    setScanning(true);
+    try {
+      const uid = await readNfcUid();
+      if (!uid) {
+        Alert.alert("エラー", "カードを読み取れませんでした");
+        setScanning(false);
+        return;
+      }
+      socket.emit("register_card", { cardUid: uid });
+    } catch {
+      Alert.alert("エラー", "スキャンに失敗しました");
+    } finally {
+      setScanning(false);
     }
-    socket.emit("register_card", { cardUid: uid });
   };
 
   // アクション選択
@@ -161,180 +307,634 @@ export default function BattleScreen() {
     socket.emit("select_action", { action });
   };
 
-  // HPバー
-  const HpBar = ({
-    current,
-    max,
-    color,
-  }: {
-    current: number;
-    max: number;
-    color: string;
-  }) => {
-    const pct = Math.max(0, (current / max) * 100);
-    return (
-      <View className="w-full h-4 bg-gray-700 rounded-full overflow-hidden">
-        <View
-          className={`h-full rounded-full ${color}`}
-          style={{ width: `${pct}%` }}
-        />
-      </View>
-    );
+  // キャンセル（scan/waitingフェーズ）
+  const cancelBattle = () => {
+    socket.emit("leave_room");
+    router.back();
   };
 
-  // --- カードスキャンフェーズ ---
+  // TurnResultからresultDataを構築
+  const buildResultData = (result: TurnResult, isAttacker: boolean): ResultData => {
+    const { resultType, damageToDefender, damageToAttacker } = result;
+
+    if (isAttacker) {
+      // 自分が攻撃側
+      switch (resultType) {
+        case "deal":
+          return {
+            header: result.attackerAction === "special" ? "必殺技発動！" : "攻撃！",
+            damage: damageToDefender,
+            label: "DAMAGE",
+            description: `${damageToDefender}ダメージを与えた！`,
+            type: "deal",
+          };
+        case "defend":
+          return {
+            header: result.attackerAction === "special" ? "必殺技発動！" : "攻撃！",
+            damage: damageToDefender,
+            label: "BLOCKED",
+            description: "相手が防御！ダメージ軽減！",
+            type: "defend",
+          };
+        case "perfect":
+          return {
+            header: result.attackerAction === "special" ? "必殺技発動！" : "攻撃！",
+            damage: 0,
+            label: "PERFECT",
+            description: "相手が完全防御！ダメージ0！",
+            type: "perfect",
+          };
+        case "counter_ok":
+          return {
+            header: "カウンターされた！",
+            damage: damageToAttacker,
+            label: "COUNTER",
+            description: `反撃で${damageToAttacker}ダメージ受けた！`,
+            type: "counter_ok",
+          };
+        case "counter_fail":
+          return {
+            header: "カウンター失敗！",
+            damage: damageToDefender,
+            label: "DAMAGE",
+            description: `無防備に${damageToDefender}ダメージ！`,
+            type: "counter_fail",
+          };
+        case "penalty":
+          return {
+            header: "時間切れ！隙を突かれた！",
+            damage: damageToAttacker,
+            label: "PENALTY",
+            description: `反撃で${damageToAttacker}ダメージ！`,
+            type: "penalty",
+          };
+        case "no_guard":
+          return {
+            header: result.attackerAction === "special" ? "必殺技発動！" : "攻撃！",
+            damage: damageToDefender,
+            label: "NO GUARD",
+            description: `相手が時間切れ！${damageToDefender}ダメージ！`,
+            type: "no_guard",
+          };
+        default:
+          return {
+            header: "攻撃！",
+            damage: damageToDefender,
+            label: "DAMAGE",
+            description: `${damageToDefender}ダメージ！`,
+            type: "deal",
+          };
+      }
+    } else {
+      // 自分が防御側
+      switch (resultType) {
+        case "deal":
+          return {
+            header: result.attackerAction === "special" ? "相手の必殺技！" : "相手の攻撃！",
+            damage: damageToDefender,
+            label: "DAMAGE",
+            description: `${damageToDefender}ダメージ受けた！`,
+            type: "take",
+          };
+        case "defend":
+          return {
+            header: result.attackerAction === "special" ? "相手の必殺技！" : "相手の攻撃！",
+            damage: damageToDefender,
+            label: "BLOCKED",
+            description: "防御成功！ダメージ軽減！",
+            type: "defend",
+          };
+        case "perfect":
+          return {
+            header: result.attackerAction === "special" ? "相手の必殺技！" : "相手の攻撃！",
+            damage: 0,
+            label: "PERFECT",
+            description: "完全防御！ダメージを防いだ！",
+            type: "perfect",
+          };
+        case "counter_ok":
+          return {
+            header: result.attackerAction === "special" ? "相手の必殺技！" : "相手の攻撃！",
+            damage: damageToAttacker,
+            label: "COUNTER",
+            description: "カウンター成功！反撃ダメージ！",
+            type: "counter_ok",
+          };
+        case "counter_fail":
+          return {
+            header: result.attackerAction === "special" ? "相手の必殺技！" : "相手の攻撃！",
+            damage: damageToDefender,
+            label: "DAMAGE",
+            description: "カウンター失敗！無防備にダメージ！",
+            type: "counter_fail",
+          };
+        case "penalty":
+          return {
+            header: "相手が時間切れ！",
+            damage: damageToAttacker,
+            label: "PENALTY",
+            description: `反撃で${damageToAttacker}ダメージ与えた！`,
+            type: "penalty",
+          };
+        case "no_guard":
+          return {
+            header: "時間切れ！" + (result.attackerAction === "special" ? "相手の必殺技！" : "相手の攻撃！"),
+            damage: damageToDefender,
+            label: "NO GUARD",
+            description: `防御なし！${damageToDefender}ダメージ！`,
+            type: "no_guard",
+          };
+        default:
+          return {
+            header: "相手の攻撃！",
+            damage: damageToDefender,
+            label: "DAMAGE",
+            description: `${damageToDefender}ダメージ！`,
+            type: "take",
+          };
+      }
+    }
+  };
+
+  // ========== Scan Phase ==========
   if (phase === "scan") {
     return (
-      <View className="flex-1 items-center justify-center p-6">
-        <Text className="text-white text-2xl font-bold mb-4">
-          カードをスキャン
-        </Text>
-        <Text className="text-gray-400 mb-8">
-          NTAGカードをスマホにかざしてください
-        </Text>
-        <TouchableOpacity
-          onPress={scanCard}
-          className="bg-green-600 px-8 py-4 rounded-xl"
-        >
-          <Text className="text-white font-bold text-lg">スキャン開始</Text>
-        </TouchableOpacity>
+      <View className="flex-1 items-center justify-center px-6">
+        <View className="bg-[#1a1a2e] rounded-3xl p-8 items-center w-full border border-[#2a2a4e]">
+          <Ionicons name="shield-half-outline" size={56} color="#6c5ce7" />
+          <Text className="text-white text-2xl font-bold mt-4">
+            対戦バトル
+          </Text>
+          <Text className="text-gray-400 text-center mt-3 leading-5">
+            カードをスキャンして{"\n"}
+            キャラクターをセットしましょう
+          </Text>
+          <TouchableOpacity
+            onPress={scanCard}
+            disabled={scanning}
+            className={`w-full py-4 rounded-2xl mt-6 flex-row items-center justify-center ${
+              scanning ? "bg-[#0f0f1a]" : "bg-[#6c5ce7]"
+            }`}
+          >
+            <Ionicons
+              name={scanning ? "radio-outline" : "scan-outline"}
+              size={22}
+              color="#fff"
+            />
+            <Text className="text-white font-bold text-base ml-2">
+              {scanning ? "読み取り中..." : "カードをスキャン"}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={cancelBattle}
+            className="w-full py-4 rounded-2xl mt-3 flex-row items-center justify-center bg-[#0f0f1a] border border-[#2a2a4e]"
+          >
+            <Ionicons name="close" size={22} color="#888" />
+            <Text className="text-gray-400 font-bold text-base ml-2">
+              キャンセル
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
 
-  // --- 待機フェーズ ---
+  // ========== Waiting Phase ==========
   if (phase === "waiting") {
     return (
-      <View className="flex-1 items-center justify-center p-6">
-        <Text className="text-white text-2xl font-bold mb-2">
-          {myCard?.name}
-        </Text>
-        <Text className="text-gray-400 mb-8">
+      <View className="flex-1 items-center justify-center px-6">
+        <Text className="text-gray-400 text-sm mb-4">対戦カード</Text>
+        <View className="flex-row items-center w-full gap-3">
+          {/* 自分のカード */}
+          <View className="flex-1">
+            {myCard ? (
+              <BattleCard
+                character={myCard}
+                currentHp={myCard.hp}
+                variant="player"
+                imageType="idle"
+              />
+            ) : (
+              <View className="bg-[#1a1a2e] rounded-2xl p-6 items-center border border-[#2a2a4e]">
+                <Text className="text-gray-500">準備中...</Text>
+              </View>
+            )}
+          </View>
+          <Text className="text-gray-600 font-bold text-lg">VS</Text>
+          {/* 相手のカード */}
+          <View className="flex-1">
+            {opponentCard ? (
+              <BattleCard
+                character={opponentCard}
+                currentHp={opponentCard.hp}
+                variant="opponent"
+                imageType="idle"
+              />
+            ) : (
+              <View className="bg-[#1a1a2e] rounded-2xl p-6 items-center border border-[#2a2a4e]">
+                <Text className="text-gray-500">待機中...</Text>
+              </View>
+            )}
+          </View>
+        </View>
+        <Text className="text-gray-500 text-sm mt-4">
           {opponentCard
             ? "バトル開始を待っています..."
             : "相手のカードスキャンを待っています..."}
         </Text>
-        {opponentCard && (
-          <Text className="text-red-400 text-lg">
-            VS {opponentCard.name}
-          </Text>
-        )}
-      </View>
-    );
-  }
-
-  // --- バトル終了 ---
-  if (phase === "finished") {
-    const isWinner = winner === myRole;
-    return (
-      <View className="flex-1 items-center justify-center p-6">
-        <Text
-          className={`text-5xl font-bold mb-4 ${
-            isWinner ? "text-yellow-400" : "text-gray-400"
-          }`}
-        >
-          {isWinner ? "勝利！" : "敗北..."}
-        </Text>
-        <Text className="text-gray-400 mb-8">
-          {myCard?.name} vs {opponentCard?.name}
-        </Text>
         <TouchableOpacity
-          onPress={() => router.back()}
-          className="bg-blue-500 px-8 py-3 rounded-xl"
+          onPress={cancelBattle}
+          className="w-full py-4 rounded-2xl mt-6 flex-row items-center justify-center bg-[#0f0f1a] border border-[#2a2a4e]"
         >
-          <Text className="text-white font-bold text-lg">ホームに戻る</Text>
+          <Ionicons name="close" size={22} color="#888" />
+          <Text className="text-gray-400 font-bold text-base ml-2">
+            キャンセル
+          </Text>
         </TouchableOpacity>
       </View>
     );
   }
 
-  // --- バトルフェーズ ---
+  // ========== Finished Phase ==========
+  if (phase === "finished") {
+    const isWin = winner === myRole;
+    return (
+      <View className="flex-1 items-center justify-center px-6">
+        <View className="bg-[#1a1a2e] rounded-3xl p-8 items-center w-full border border-[#2a2a4e]">
+          <Ionicons
+            name={isWin ? "trophy" : "refresh-circle-outline"}
+            size={64}
+            color={isWin ? "#f1c40f" : "#888"}
+          />
+          <Text
+            className={`text-3xl font-bold mt-4 ${
+              isWin ? "text-yellow-400" : "text-gray-400"
+            }`}
+          >
+            {isWin ? "勝利！" : "敗北..."}
+          </Text>
+          <Text className="text-gray-500 mt-2">
+            {myCard?.name} vs {opponentCard?.name} ({turn}ターン)
+          </Text>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            className="bg-[#0f0f1a] w-full py-4 rounded-2xl mt-6 border border-[#2a2a4e] flex-row items-center justify-center"
+          >
+            <Ionicons name="home-outline" size={20} color="#888" />
+            <Text className="text-gray-400 font-bold text-base ml-2">
+              ホームに戻る
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // ========== Battle Phase ==========
+  const isMyAttack =
+    (turnType === "A_attacks" && myRole === "A") ||
+    (turnType === "B_attacks" && myRole === "B");
+  const tip = getTip(isMyAttack, turn);
+
   return (
-    <View className="flex-1 p-4">
-      {/* ターン情報 */}
-      <View className="items-center mb-4">
-        <Text className="text-gray-400">ターン {turn}</Text>
-        <Text
-          className={`text-2xl font-bold ${
-            timer <= 5 ? "text-red-500" : "text-white"
+    <View className="flex-1">
+      {/* ===== ターン情報バー ===== */}
+      <View className="flex-row items-center justify-between px-4 pt-2 pb-1">
+        <View className="flex-row items-center">
+          <Text className="text-gray-600 text-xs">TURN {turn}</Text>
+          <View
+            className={`ml-2 px-2.5 py-1 rounded-full ${
+              isMyAttack ? "bg-[#6c5ce7]/15" : "bg-red-500/15"
+            }`}
+          >
+            <Text
+              className={`text-xs font-bold ${
+                isMyAttack ? "text-[#6c5ce7]" : "text-red-400"
+              }`}
+            >
+              {isMyAttack ? "YOUR ATTACK" : "ENEMY ATTACK"}
+            </Text>
+          </View>
+        </View>
+        <View
+          className={`flex-row items-center px-3 py-1 rounded-full ${
+            timer <= 5 ? "bg-red-500/15" : "bg-[#1a1a2e]"
           }`}
         >
-          {timer}秒
-        </Text>
-      </View>
-
-      {/* 相手キャラクター */}
-      <View className="bg-white/5 rounded-xl p-4 mb-4">
-        <Text className="text-red-400 text-lg font-bold">
-          {opponentCard?.name}
-        </Text>
-        <HpBar
-          current={opponentHp}
-          max={opponentCard?.hp ?? 1}
-          color="bg-red-500"
-        />
-        <Text className="text-gray-400 text-sm mt-1">
-          HP: {opponentHp} / {opponentCard?.hp}
-        </Text>
-      </View>
-
-      {/* ターン結果 */}
-      {lastResult && (
-        <View className="bg-yellow-500/10 rounded-xl p-3 mb-4 items-center">
-          <Text className="text-yellow-400 font-bold">
-            {myRole === "A"
-              ? `${lastResult.playerA.damageTaken}ダメージ受けた / ${lastResult.playerB.damageTaken}ダメージ与えた`
-              : `${lastResult.playerB.damageTaken}ダメージ受けた / ${lastResult.playerA.damageTaken}ダメージ与えた`}
+          <Ionicons
+            name="time-outline"
+            size={14}
+            color={timer <= 5 ? "#e94560" : "#555"}
+          />
+          <Text
+            className={`text-base font-bold ml-1 ${
+              timer <= 5 ? "text-red-500" : "text-gray-400"
+            }`}
+          >
+            {timer}
           </Text>
+        </View>
+      </View>
+
+      {/* ===== 上部: 相手カード（右寄せ） ===== */}
+      {opponentCard && (
+        <View className="px-4 pt-1 items-end">
+          <View className="w-1/2">
+            <BattleCard
+              character={opponentCard}
+              currentHp={opponentHp}
+              variant="opponent"
+              imageType={opponentImageType}
+            />
+          </View>
         </View>
       )}
 
-      {/* 自分キャラクター */}
-      <View className="bg-white/5 rounded-xl p-4 mb-6">
-        <Text className="text-blue-400 text-lg font-bold">
-          {myCard?.name}
-        </Text>
-        <HpBar
-          current={myHp}
-          max={myCard?.hp ?? 1}
-          color="bg-blue-500"
-        />
-        <Text className="text-gray-400 text-sm mt-1">
-          HP: {myHp} / {myCard?.hp}
-        </Text>
+      {/* ===== 中央: バトルフィールド（オーバーレイ） ===== */}
+      <View className="flex-1 px-6 justify-center items-center" style={{ zIndex: 10 }} pointerEvents="none">
+        {showResult && resultData ? (
+          // === 結果表示 ===
+          <Animated.View
+            className="items-center w-full"
+            style={{
+              opacity: damageAnim,
+              transform: [{ translateX: shakeAnim }],
+            }}
+          >
+            {/* ヘッダー */}
+            <Text className="text-gray-400 text-lg font-bold mb-2">
+              {resultData.header}
+            </Text>
+
+            {/* ダメージ数値 */}
+            {resultData.damage > 0 ? (
+              <View className="items-center my-2">
+                <Animated.View
+                  style={{ transform: [{ scale: numberAnim }] }}
+                  className="items-center"
+                >
+                  <Text
+                    className={`font-black ${
+                      resultData.type === "counter_ok"
+                        ? "text-emerald-400"
+                        : resultData.type === "penalty" ||
+                            resultData.type === "no_guard"
+                          ? "text-red-400"
+                          : resultData.type === "counter_fail" ||
+                              resultData.type === "deal"
+                            ? "text-amber-400"
+                            : "text-blue-400"
+                    }`}
+                    style={{ fontSize: 48, lineHeight: 54 }}
+                  >
+                    {resultData.damage}
+                  </Text>
+                </Animated.View>
+                <Text
+                  className={`text-sm font-bold tracking-widest mt-1 ${
+                    resultData.type === "counter_ok"
+                      ? "text-emerald-500/60"
+                      : resultData.type === "penalty" ||
+                          resultData.type === "no_guard"
+                        ? "text-red-500/60"
+                        : resultData.type === "counter_fail" ||
+                            resultData.type === "deal"
+                          ? "text-amber-500/60"
+                          : "text-blue-500/60"
+                  }`}
+                >
+                  {resultData.label}
+                </Text>
+              </View>
+            ) : (
+              <View className="items-center my-2">
+                <Animated.View
+                  style={{ transform: [{ scale: numberAnim }] }}
+                >
+                  <View className="w-14 h-14 rounded-full bg-emerald-500/15 items-center justify-center">
+                    <Ionicons name="shield-checkmark" size={28} color="#10b981" />
+                  </View>
+                </Animated.View>
+                <Text className="text-emerald-400/60 text-sm font-bold tracking-widest mt-1">
+                  {resultData.label}
+                </Text>
+              </View>
+            )}
+
+            {/* 説明テキスト */}
+            <View
+              className={`px-5 py-2.5 rounded-full mt-1 ${
+                resultData.type === "counter_ok" || resultData.type === "perfect"
+                  ? "bg-emerald-500/10"
+                  : resultData.type === "counter_fail" ||
+                      resultData.type === "penalty" ||
+                      resultData.type === "no_guard"
+                    ? "bg-red-500/10"
+                    : resultData.type === "defend"
+                      ? "bg-blue-500/10"
+                      : "bg-amber-500/10"
+              }`}
+            >
+              <Text
+                className={`text-base font-bold ${
+                  resultData.type === "counter_ok" || resultData.type === "perfect"
+                    ? "text-emerald-400"
+                    : resultData.type === "counter_fail" ||
+                        resultData.type === "penalty" ||
+                        resultData.type === "no_guard"
+                      ? "text-red-400"
+                      : resultData.type === "defend"
+                        ? "text-blue-400"
+                        : "text-amber-400"
+                }`}
+              >
+                {resultData.description}
+              </Text>
+            </View>
+          </Animated.View>
+        ) : actionSelected ? (
+          // === アクション処理中 ===
+          <View className="items-center">
+            <Animated.View
+              style={{
+                opacity: damageAnim.interpolate({
+                  inputRange: [0, 0.5, 1],
+                  outputRange: [0.3, 1, 0.3],
+                }),
+              }}
+            >
+              <Ionicons
+                name={isMyAttack ? "flame" : "shield-half-outline"}
+                size={64}
+                color={isMyAttack ? "#6c5ce7" : "#e94560"}
+              />
+            </Animated.View>
+            <Text className="text-gray-400 text-lg font-bold mt-4">
+              {isMyAttack ? "攻撃中..." : "判定中..."}
+            </Text>
+          </View>
+        ) : (
+          // === ターン開始表示 ===
+          <Animated.View
+            className="items-center"
+            style={{ opacity: fieldAnim }}
+          >
+            <View
+              className={`w-20 h-20 rounded-full items-center justify-center mb-3 ${
+                isMyAttack ? "bg-[#6c5ce7]/10" : "bg-red-500/10"
+              }`}
+            >
+              <View
+                className={`w-14 h-14 rounded-full items-center justify-center ${
+                  isMyAttack ? "bg-[#6c5ce7]/20" : "bg-red-500/20"
+                }`}
+              >
+                <Ionicons
+                  name={isMyAttack ? "flame" : "shield-half-outline"}
+                  size={28}
+                  color={isMyAttack ? "#6c5ce7" : "#e94560"}
+                />
+              </View>
+            </View>
+            <Text className="text-white text-lg font-bold">
+              {isMyAttack ? "あなたの攻撃" : "相手の攻撃"}
+            </Text>
+            <Text className="text-gray-500 text-base mt-1">{tip}</Text>
+          </Animated.View>
+        )}
       </View>
 
-      {/* アクション選択 */}
-      <View className="flex-row gap-4">
-        <TouchableOpacity
-          onPress={() => selectAction("attack")}
-          disabled={actionSelected}
-          className={`flex-1 py-4 rounded-xl ${
-            actionSelected ? "bg-gray-600" : "bg-red-600"
-          }`}
-        >
-          <Text className="text-white text-center font-bold text-xl">
-            ⚔️ 攻撃
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => selectAction("defend")}
-          disabled={actionSelected}
-          className={`flex-1 py-4 rounded-xl ${
-            actionSelected ? "bg-gray-600" : "bg-blue-600"
-          }`}
-        >
-          <Text className="text-white text-center font-bold text-xl">
-            🛡️ 防御
-          </Text>
-        </TouchableOpacity>
-      </View>
+      {/* ===== 下部: 自分カード（左）+ アクション（右）横並び ===== */}
+      <View className="px-4 pb-10 flex-row gap-3">
+        {/* 自分カード */}
+        {myCard && (
+          <View className="w-1/2">
+            <BattleCard
+              character={myCard}
+              currentHp={myHp}
+              variant="player"
+              imageType={myImageType}
+            />
+          </View>
+        )}
 
-      {actionSelected && (
-        <Text className="text-gray-400 text-center mt-3">
-          相手の行動を待っています...
-        </Text>
-      )}
+        {/* アクションボタン（縦並び・高さ統一） */}
+        <View className="flex-1 justify-end gap-2">
+          {isMyAttack ? (
+            <>
+              <TouchableOpacity
+                onPress={() => selectAction("attack")}
+                disabled={actionSelected}
+                style={{ height: 44 }}
+                className={`rounded-xl flex-row items-center justify-center ${
+                  actionSelected
+                    ? "bg-[#1a1a2e] border border-[#2a2a4e]"
+                    : "bg-red-500/90"
+                }`}
+              >
+                <Ionicons
+                  name="flame"
+                  size={20}
+                  color={actionSelected ? "#555" : "#fff"}
+                />
+                <Text
+                  className={`font-bold text-sm ml-1.5 ${
+                    actionSelected ? "text-gray-600" : "text-white"
+                  }`}
+                >
+                  攻撃
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => selectAction("special")}
+                disabled={actionSelected || mySpecialCd > 0}
+                style={{ height: 44 }}
+                className={`rounded-xl flex-row items-center justify-center ${
+                  actionSelected || mySpecialCd > 0
+                    ? "bg-[#1a1a2e] border border-[#2a2a4e]"
+                    : "bg-amber-500/90"
+                }`}
+              >
+                <Ionicons
+                  name="flash"
+                  size={20}
+                  color={actionSelected || mySpecialCd > 0 ? "#555" : "#fff"}
+                />
+                <Text
+                  className={`font-bold text-sm ml-1.5 ${
+                    actionSelected || mySpecialCd > 0
+                      ? "text-gray-600"
+                      : "text-white"
+                  }`}
+                >
+                  必殺技
+                </Text>
+                {mySpecialCd > 0 && (
+                  <Text className="text-gray-600 text-[10px] ml-1">
+                    CT:{mySpecialCd}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <TouchableOpacity
+                onPress={() => selectAction("defend")}
+                disabled={actionSelected}
+                style={{ height: 44 }}
+                className={`rounded-xl flex-row items-center justify-center ${
+                  actionSelected
+                    ? "bg-[#1a1a2e] border border-[#2a2a4e]"
+                    : "bg-blue-500/90"
+                }`}
+              >
+                <Ionicons
+                  name="shield"
+                  size={20}
+                  color={actionSelected ? "#555" : "#fff"}
+                />
+                <Text
+                  className={`font-bold text-sm ml-1.5 ${
+                    actionSelected ? "text-gray-600" : "text-white"
+                  }`}
+                >
+                  防御
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => selectAction("counter")}
+                disabled={actionSelected}
+                style={{ height: 44 }}
+                className={`rounded-xl flex-row items-center justify-center ${
+                  actionSelected
+                    ? "bg-[#1a1a2e] border border-[#2a2a4e]"
+                    : "bg-orange-500/90"
+                }`}
+              >
+                <Ionicons
+                  name="flash-outline"
+                  size={20}
+                  color={actionSelected ? "#555" : "#fff"}
+                />
+                <Text
+                  className={`font-bold text-sm ml-1.5 ${
+                    actionSelected ? "text-gray-600" : "text-white"
+                  }`}
+                >
+                  カウンター
+                </Text>
+                <Text
+                  className={`text-[10px] ml-1 ${
+                    actionSelected ? "text-gray-700" : "text-orange-200"
+                  }`}
+                >
+                  30%
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+      </View>
     </View>
   );
 }

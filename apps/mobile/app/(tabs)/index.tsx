@@ -1,26 +1,36 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { View, Text, TouchableOpacity, Alert } from "react-native";
 import { useRouter } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { Ionicons } from "@expo/vector-icons";
 import { socket } from "@/lib/socket";
 
+type MatchingState = "idle" | "qr_display" | "camera_scan";
+
 export default function HomeScreen() {
   const router = useRouter();
+  const [matchingState, setMatchingState] = useState<MatchingState>("idle");
   const [roomCode, setRoomCode] = useState<string | null>(null);
-  const [scanning, setScanning] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
+  const roomCodeRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    roomCodeRef.current = roomCode;
+  }, [roomCode]);
 
   useEffect(() => {
     // ルーム作成完了
-    const onRoomCreated = ({ roomCode }: { roomCode: string }) => {
-      setRoomCode(roomCode);
+    const onRoomCreated = ({ roomCode: code }: { roomCode: string }) => {
+      setRoomCode(code);
+      roomCodeRef.current = code;
+      setMatchingState("qr_display");
     };
 
-    // 対戦相手参加
+    // 対戦相手参加（ルーム作成者側）
     const onOpponentJoined = () => {
-      if (roomCode) {
-        router.push(`/battle/${roomCode}`);
+      const code = roomCodeRef.current;
+      if (code) {
+        router.push(`/battle/${code}`);
       }
     };
 
@@ -31,16 +41,16 @@ export default function HomeScreen() {
       socket.off("room_created", onRoomCreated);
       socket.off("opponent_joined", onOpponentJoined);
     };
-  }, [roomCode]);
+  }, []);
 
-  // ルーム作成
-  const createRoom = () => {
+  // 対戦ボタン → ルーム作成 + QR表示
+  const startMatching = () => {
     setRoomCode(null);
     socket.emit("create_room");
   };
 
-  // QRスキャン開始
-  const startScan = async () => {
+  // カメラスキャンモードに切り替え
+  const switchToCamera = async () => {
     if (!permission?.granted) {
       const result = await requestPermission();
       if (!result.granted) {
@@ -48,12 +58,12 @@ export default function HomeScreen() {
         return;
       }
     }
-    setScanning(true);
+    setMatchingState("camera_scan");
   };
 
   // QRコード読み取り
   const onBarcodeScanned = ({ data }: { data: string }) => {
-    setScanning(false);
+    setMatchingState("idle");
 
     // nfc-battle://join/{roomCode} 形式をパース
     const match = data.match(/nfc-battle:\/\/join\/(\w+)/);
@@ -66,22 +76,52 @@ export default function HomeScreen() {
     }
   };
 
-  // QRスキャン中
-  if (scanning) {
+  // キャンセル → アイドルに戻る
+  const cancelMatching = () => {
+    if (roomCode) {
+      socket.emit("leave_room");
+    }
+    setMatchingState("idle");
+    setRoomCode(null);
+  };
+
+  // カメラスキャン画面
+  if (matchingState === "camera_scan") {
     return (
-      <View className="flex-1 bg-black">
+      <View style={{ flex: 1, backgroundColor: "#000" }}>
         <CameraView
-          className="flex-1"
+          style={{ flex: 1 }}
+          facing="back"
           barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
           onBarcodeScanned={onBarcodeScanned}
         />
+        {/* スキャンフレームオーバーレイ */}
+        <View
+          className="absolute inset-0 items-center justify-center"
+          pointerEvents="none"
+        >
+          <View className="w-64 h-64 relative">
+            {/* 左上 */}
+            <View className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-[#6c5ce7] rounded-tl-lg" />
+            {/* 右上 */}
+            <View className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-[#6c5ce7] rounded-tr-lg" />
+            {/* 左下 */}
+            <View className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-[#6c5ce7] rounded-bl-lg" />
+            {/* 右下 */}
+            <View className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-[#6c5ce7] rounded-br-lg" />
+          </View>
+          <Text className="text-white text-base mt-6">
+            QRコードをかざしてください
+          </Text>
+        </View>
+        {/* 戻るボタン */}
         <TouchableOpacity
-          onPress={() => setScanning(false)}
+          onPress={() => setMatchingState("qr_display")}
           className="absolute bottom-12 self-center bg-white/20 px-8 py-3 rounded-full flex-row items-center"
         >
-          <Ionicons name="close" size={20} color="#fff" />
+          <Ionicons name="arrow-back" size={20} color="#fff" />
           <Text className="text-white font-semibold text-base ml-2">
-            キャンセル
+            戻る
           </Text>
         </TouchableOpacity>
       </View>
@@ -101,43 +141,60 @@ export default function HomeScreen() {
         </Text>
       </View>
 
-      {/* ルーム作成ボタン */}
-      <TouchableOpacity
-        onPress={createRoom}
-        className="bg-[#6c5ce7] w-full py-4 rounded-2xl mb-3 flex-row items-center justify-center"
-      >
-        <Ionicons name="add-circle-outline" size={22} color="#fff" />
-        <Text className="text-white font-bold text-base ml-2">
-          ルーム作成
-        </Text>
-      </TouchableOpacity>
-
-      {/* QRコード表示 */}
-      {roomCode && (
-        <View className="bg-[#1a1a2e] rounded-2xl p-6 items-center mb-3 w-full border border-[#2a2a4e]">
-          <Text className="text-gray-400 text-xs mb-1">ルームコード</Text>
-          <Text className="text-white font-bold text-2xl tracking-widest mb-4">
-            {roomCode}
-          </Text>
-          <View className="bg-white rounded-xl p-4">
-            <QRCodeDisplay value={`nfc-battle://join/${roomCode}`} />
+      {matchingState === "idle" ? (
+        <>
+          {/* 対戦ボタン */}
+          <TouchableOpacity
+            onPress={startMatching}
+            className="bg-[#6c5ce7] w-full py-4 rounded-2xl mb-3 flex-row items-center justify-center"
+          >
+            <Ionicons name="people-outline" size={22} color="#fff" />
+            <Text className="text-white font-bold text-base ml-2">
+              対戦
+            </Text>
+          </TouchableOpacity>
+        </>
+      ) : (
+        <>
+          {/* QRコード表示 */}
+          <View className="bg-[#1a1a2e] rounded-2xl p-6 items-center mb-3 w-full border border-[#2a2a4e]">
+            <Text className="text-gray-400 text-xs mb-1">ルームコード</Text>
+            <Text className="text-white font-bold text-2xl tracking-widest mb-4">
+              {roomCode || "..."}
+            </Text>
+            {roomCode && (
+              <View className="bg-white rounded-xl p-4">
+                <QRCodeDisplay value={`nfc-battle://join/${roomCode}`} />
+              </View>
+            )}
+            <Text className="text-gray-500 text-xs mt-3">
+              相手にQRコードを見せてください
+            </Text>
           </View>
-          <Text className="text-gray-500 text-xs mt-3">
-            相手にQRコードを見せてください
-          </Text>
-        </View>
-      )}
 
-      {/* QRスキャンボタン */}
-      <TouchableOpacity
-        onPress={startScan}
-        className="bg-[#1a1a2e] w-full py-4 rounded-2xl border border-[#2a2a4e] flex-row items-center justify-center"
-      >
-        <Ionicons name="qr-code-outline" size={22} color="#6c5ce7" />
-        <Text className="text-[#6c5ce7] font-bold text-base ml-2">
-          QRスキャンで参加
-        </Text>
-      </TouchableOpacity>
+          {/* 相手のQRを読み取るボタン */}
+          <TouchableOpacity
+            onPress={switchToCamera}
+            className="bg-[#6c5ce7] w-full py-4 rounded-2xl mb-3 flex-row items-center justify-center"
+          >
+            <Ionicons name="camera-outline" size={22} color="#fff" />
+            <Text className="text-white font-bold text-base ml-2">
+              相手のQRを読み取る
+            </Text>
+          </TouchableOpacity>
+
+          {/* キャンセルボタン */}
+          <TouchableOpacity
+            onPress={cancelMatching}
+            className="bg-[#1a1a2e] w-full py-4 rounded-2xl border border-[#2a2a4e] flex-row items-center justify-center"
+          >
+            <Ionicons name="close" size={22} color="#888" />
+            <Text className="text-gray-400 font-bold text-base ml-2">
+              キャンセル
+            </Text>
+          </TouchableOpacity>
+        </>
+      )}
 
       {/* 区切り */}
       <View className="flex-row items-center w-full my-6">

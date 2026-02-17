@@ -1,46 +1,62 @@
 import type { Server, Socket } from "socket.io";
 import type {
-  ActionType,
   ClientToServerEvents,
   ServerToClientEvents,
   Character,
+  TurnType,
 } from "@nfc-card-battle/shared";
 import { TURN_TIME_LIMIT } from "@nfc-card-battle/shared";
 import { roomManager, type Room } from "./room-manager";
-import { resolveTurn } from "./engine";
+import { resolveTurnBased } from "./engine";
 import { prisma } from "../lib/prisma";
 
 type IO = Server<ClientToServerEvents, ServerToClientEvents>;
 type ClientSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
-
-// ランダムアクション（タイムアウト時）
-function randomAction(): ActionType {
-  return Math.random() < 0.5 ? "attack" : "defend";
-}
 
 // ターン開始
 function startTurn(io: IO, room: Room) {
   room.state.currentTurn++;
   roomManager.resetActions(room);
 
-  // 両者にターン開始を通知
-  const turnData = {
+  // 初ターンはA_attacks、以降は交互
+  if (room.state.currentTurn > 1) {
+    roomManager.toggleTurnType(room);
+  }
+
+  const turnType = room.state.turnType;
+
+  // 各プレイヤーにターン開始を通知（roleを含む）
+  io.to(room.playerA.socketId).emit("battle_start", {
     turn: room.state.currentTurn,
     timeLimit: TURN_TIME_LIMIT,
-  };
-  io.to(room.playerA.socketId).emit("battle_start", turnData);
+    turnType,
+    role: "A",
+    specialCd: room.playerA.specialCd,
+  });
   if (room.playerB) {
-    io.to(room.playerB.socketId).emit("battle_start", turnData);
+    io.to(room.playerB.socketId).emit("battle_start", {
+      turn: room.state.currentTurn,
+      timeLimit: TURN_TIME_LIMIT,
+      turnType,
+      role: "B",
+      specialCd: room.playerB.specialCd,
+    });
   }
 
   // タイムアウト処理
   room.turnTimer = setTimeout(() => {
-    // 未選択のプレイヤーにはランダムアクション
-    if (room.playerA.action === null) {
-      room.playerA.action = randomAction();
+    const turnType = room.state.turnType;
+    const attackerRole = turnType === "A_attacks" ? "A" : "B";
+    const defenderRole = attackerRole === "A" ? "B" : "A";
+
+    const attacker = attackerRole === "A" ? room.playerA : room.playerB;
+    const defender = defenderRole === "A" ? room.playerA : room.playerB;
+
+    if (attacker && attacker.action === null) {
+      attacker.action = "timeout";
     }
-    if (room.playerB && room.playerB.action === null) {
-      room.playerB.action = randomAction();
+    if (defender && defender.action === null) {
+      defender.action = "timeout";
     }
     processTurn(io, room);
   }, TURN_TIME_LIMIT * 1000);
@@ -60,25 +76,42 @@ function processTurn(io: IO, room: Room) {
   )
     return;
 
-  const result = resolveTurn(
+  const turnType = room.state.turnType;
+  const attackerRole = turnType === "A_attacks" ? "A" : "B";
+
+  const attackerSlot = attackerRole === "A" ? room.playerA : room.playerB;
+  const defenderSlot = attackerRole === "A" ? room.playerB : room.playerA;
+  const attackerState = attackerRole === "A" ? room.state.playerA : room.state.playerB;
+  const defenderState = attackerRole === "A" ? room.state.playerB : room.state.playerA;
+
+  if (!attackerSlot || !defenderSlot || !attackerState || !defenderState) return;
+
+  const result = resolveTurnBased(
     room.state.currentTurn,
+    turnType,
     {
-      hp: room.state.playerA.hp,
-      attack: room.state.playerA.card.attack,
-      defense: room.state.playerA.card.defense,
+      hp: attackerState.hp,
+      attack: attackerState.card.attack,
+      defense: attackerState.card.defense,
+      specialCd: attackerSlot.specialCd,
     },
     {
-      hp: room.state.playerB.hp,
-      attack: room.state.playerB.card.attack,
-      defense: room.state.playerB.card.defense,
+      hp: defenderState.hp,
+      attack: defenderState.card.attack,
+      defense: defenderState.card.defense,
+      specialCd: defenderSlot.specialCd,
     },
-    room.playerA.action!,
-    room.playerB.action!
+    attackerSlot.action!,
+    defenderSlot.action!
   );
 
   // HP更新
   room.state.playerA.hp = result.playerA.hpAfter;
   room.state.playerB.hp = result.playerB.hpAfter;
+
+  // クールダウン更新
+  room.playerA.specialCd = result.playerA.specialCd;
+  room.playerB.specialCd = result.playerB.specialCd;
 
   // ターン結果を送信
   io.to(room.playerA.socketId).emit("turn_result", result);
@@ -92,8 +125,7 @@ function processTurn(io: IO, room: Room) {
     room.state.status = "finished";
     let winner: "A" | "B";
     if (!aAlive && !bAlive) {
-      // 同時KOの場合、HPが多い方が勝ち（同じならA勝利）
-      winner = "A";
+      winner = "A"; // 同時KOはA勝利
     } else {
       winner = aAlive ? "A" : "B";
     }
@@ -102,7 +134,6 @@ function processTurn(io: IO, room: Room) {
     io.to(room.playerA.socketId).emit("battle_end", endData);
     io.to(room.playerB.socketId).emit("battle_end", endData);
 
-    // ルーム削除
     roomManager.removeRoom(room.code);
   } else {
     // 次のターンへ
@@ -184,8 +215,8 @@ export function setupSocketHandlers(io: IO) {
         room.state.playerB = { card: character, hp: character.hp };
       }
 
-      // 自分にカード情報送信
-      socket.emit("card_registered", { card: character });
+      // 自分にカード情報 + role送信
+      socket.emit("card_registered", { card: character, role: role! });
 
       // 相手にカード情報通知
       const opponentId =
@@ -213,11 +244,46 @@ export function setupSocketHandlers(io: IO) {
       const role = roomManager.getPlayerRole(room, socket.id);
       if (!role) return;
 
+      const turnType = room.state.turnType;
+      const attackerRole = turnType === "A_attacks" ? "A" : "B";
+
+      // アクションバリデーション
+      if (role === attackerRole) {
+        // 攻撃側: attack | special のみ
+        if (action !== "attack" && action !== "special") return;
+        // 必殺技クールダウンチェック
+        if (action === "special") {
+          const slot = role === "A" ? room.playerA : room.playerB;
+          if (slot && slot.specialCd > 0) return;
+        }
+      } else {
+        // 防御側: defend | counter のみ
+        if (action !== "defend" && action !== "counter") return;
+      }
+
       roomManager.setAction(room, role, action);
 
       // 両者選択完了 → ターン処理
       if (roomManager.bothActionsReady(room)) {
         processTurn(io, room);
+      }
+    });
+
+    // ルーム離脱
+    socket.on("leave_room", () => {
+      const room = roomManager.findRoomBySocket(socket.id);
+      if (room) {
+        const role = roomManager.getPlayerRole(room, socket.id);
+        const opponentId =
+          role === "A"
+            ? room.playerB?.socketId
+            : room.playerA.socketId;
+
+        if (opponentId) {
+          io.to(opponentId).emit("opponent_disconnected");
+        }
+        roomManager.removeRoom(room.code);
+        console.log(`ルーム離脱: ${room.code} by ${socket.id}`);
       }
     });
 

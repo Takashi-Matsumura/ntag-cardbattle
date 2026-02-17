@@ -2,12 +2,14 @@ import type {
   ActionType,
   BattleState,
   Character,
+  TurnType,
 } from "@nfc-card-battle/shared";
 
 interface PlayerSlot {
   socketId: string;
   card: Character | null;
   action: ActionType | null;
+  specialCd: number;
 }
 
 export interface Room {
@@ -41,8 +43,9 @@ class RoomManager {
         playerA: null,
         playerB: null,
         currentTurn: 0,
+        turnType: "A_attacks",
       },
-      playerA: { socketId, card: null, action: null },
+      playerA: { socketId, card: null, action: null, specialCd: 0 },
       playerB: null,
       turnTimer: null,
     };
@@ -56,7 +59,7 @@ class RoomManager {
     if (!room) return null;
     if (room.playerB) return null; // 満室
 
-    room.playerB = { socketId, card: null, action: null };
+    room.playerB = { socketId, card: null, action: null, specialCd: 0 };
     return room;
   }
 
@@ -106,6 +109,14 @@ class RoomManager {
   resetActions(room: Room) {
     room.playerA.action = null;
     if (room.playerB) room.playerB.action = null;
+  }
+
+  // ターンタイプの切り替え
+  toggleTurnType(room: Room): TurnType {
+    const next: TurnType =
+      room.state.turnType === "A_attacks" ? "B_attacks" : "A_attacks";
+    room.state.turnType = next;
+    return next;
   }
 
   // ルーム削除
