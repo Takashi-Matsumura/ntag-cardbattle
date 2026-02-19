@@ -11,6 +11,7 @@ import {
 } from "@nfc-card-battle/shared";
 import { readNfcUid } from "@/lib/nfc";
 import { BattleCard } from "@/components/BattleCard";
+import { ActionCardController } from "@/components/ActionCardController";
 
 const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL || "http://localhost:3000";
 const fetchHeaders = { "ngrok-skip-browser-warning": "true" };
@@ -882,136 +883,20 @@ export default function TutorialScreen() {
         )}
       </View>
 
-      {/* ===== 下部: 自分カード（左）+ アクション（右）横並び ===== */}
-      <View className="px-4 pb-10 flex-row gap-3">
-        {/* 自分カード */}
-        <View className="w-1/2">
-          <BattleCard
-            character={playerChar}
-            currentHp={myHp}
-            variant="player"
-            imageType={playerImageType}
-          />
-        </View>
-
-        {/* アクションボタン（縦並び・高さ統一） */}
-        <View className="flex-1 justify-end gap-2">
-          {isPlayerTurn ? (
-            <>
-              <TouchableOpacity
-                onPress={() => handlePlayerAttack("attack")}
-                disabled={actionSelected}
-                style={{ height: 44 }}
-                className={`rounded-xl flex-row items-center justify-center ${
-                  actionSelected
-                    ? "bg-[#1a1a2e] border border-[#2a2a4e]"
-                    : "bg-red-500/90"
-                }`}
-              >
-                <Ionicons
-                  name="flame"
-                  size={20}
-                  color={actionSelected ? "#555" : "#fff"}
-                />
-                <Text
-                  className={`font-bold text-sm ml-1.5 ${
-                    actionSelected ? "text-gray-600" : "text-white"
-                  }`}
-                >
-                  攻撃
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => handlePlayerAttack("special")}
-                disabled={actionSelected || playerSpecialCd > 0}
-                style={{ height: 44 }}
-                className={`rounded-xl flex-row items-center justify-center ${
-                  actionSelected || playerSpecialCd > 0
-                    ? "bg-[#1a1a2e] border border-[#2a2a4e]"
-                    : "bg-amber-500/90"
-                }`}
-              >
-                <Ionicons
-                  name="flash"
-                  size={20}
-                  color={
-                    actionSelected || playerSpecialCd > 0 ? "#555" : "#fff"
-                  }
-                />
-                <Text
-                  className={`font-bold text-sm ml-1.5 ${
-                    actionSelected || playerSpecialCd > 0
-                      ? "text-gray-600"
-                      : "text-white"
-                  }`}
-                >
-                  必殺技
-                </Text>
-                {playerSpecialCd > 0 && (
-                  <Text className="text-gray-600 text-[10px] ml-1">
-                    CT:{playerSpecialCd}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </>
-          ) : (
-            <>
-              <TouchableOpacity
-                onPress={() => handlePlayerDefend("defend")}
-                disabled={actionSelected}
-                style={{ height: 44 }}
-                className={`rounded-xl flex-row items-center justify-center ${
-                  actionSelected
-                    ? "bg-[#1a1a2e] border border-[#2a2a4e]"
-                    : "bg-blue-500/90"
-                }`}
-              >
-                <Ionicons
-                  name="shield"
-                  size={20}
-                  color={actionSelected ? "#555" : "#fff"}
-                />
-                <Text
-                  className={`font-bold text-sm ml-1.5 ${
-                    actionSelected ? "text-gray-600" : "text-white"
-                  }`}
-                >
-                  防御
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => handlePlayerDefend("counter")}
-                disabled={actionSelected}
-                style={{ height: 44 }}
-                className={`rounded-xl flex-row items-center justify-center ${
-                  actionSelected
-                    ? "bg-[#1a1a2e] border border-[#2a2a4e]"
-                    : "bg-orange-500/90"
-                }`}
-              >
-                <Ionicons
-                  name="flash-outline"
-                  size={20}
-                  color={actionSelected ? "#555" : "#fff"}
-                />
-                <Text
-                  className={`font-bold text-sm ml-1.5 ${
-                    actionSelected ? "text-gray-600" : "text-white"
-                  }`}
-                >
-                  カウンター
-                </Text>
-                <Text
-                  className={`text-[10px] ml-1 ${
-                    actionSelected ? "text-gray-700" : "text-orange-200"
-                  }`}
-                >
-                  30%
-                </Text>
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
+      {/* ===== 下部: アクションカード ===== */}
+      <View className="px-4 pb-10 items-center" style={{ overflow: "visible" }}>
+        <ActionCardController
+          character={playerChar}
+          currentHp={myHp}
+          imageType={playerImageType}
+          isAttackTurn={isPlayerTurn}
+          specialCooldown={playerSpecialCd}
+          actionSelected={actionSelected}
+          onActionConfirm={(action) => {
+            if (isPlayerTurn) handlePlayerAttack(action as "attack" | "special");
+            else handlePlayerDefend(action as "defend" | "counter");
+          }}
+        />
       </View>
     </View>
   );

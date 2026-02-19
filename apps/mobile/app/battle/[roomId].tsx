@@ -15,6 +15,7 @@ import { TURN_TIME_LIMIT } from "@nfc-card-battle/shared";
 import { socket } from "@/lib/socket";
 import { readNfcUid } from "@/lib/nfc";
 import { BattleCard } from "@/components/BattleCard";
+import { ActionCardController } from "@/components/ActionCardController";
 
 type Phase = "scan" | "waiting" | "battle" | "finished";
 
@@ -804,136 +805,19 @@ export default function BattleScreen() {
         )}
       </View>
 
-      {/* ===== 下部: 自分カード（左）+ アクション（右）横並び ===== */}
-      <View className="px-4 pb-10 flex-row gap-3">
-        {/* 自分カード */}
+      {/* ===== 下部: アクションカード ===== */}
+      <View className="px-4 pb-10 items-center" style={{ overflow: "visible" }}>
         {myCard && (
-          <View className="w-1/2">
-            <BattleCard
-              character={myCard}
-              currentHp={myHp}
-              variant="player"
-              imageType={myImageType}
-            />
-          </View>
+          <ActionCardController
+            character={myCard}
+            currentHp={myHp}
+            imageType={myImageType}
+            isAttackTurn={isMyAttack}
+            specialCooldown={mySpecialCd}
+            actionSelected={actionSelected}
+            onActionConfirm={selectAction}
+          />
         )}
-
-        {/* アクションボタン（縦並び・高さ統一） */}
-        <View className="flex-1 justify-end gap-2">
-          {isMyAttack ? (
-            <>
-              <TouchableOpacity
-                onPress={() => selectAction("attack")}
-                disabled={actionSelected}
-                style={{ height: 44 }}
-                className={`rounded-xl flex-row items-center justify-center ${
-                  actionSelected
-                    ? "bg-[#1a1a2e] border border-[#2a2a4e]"
-                    : "bg-red-500/90"
-                }`}
-              >
-                <Ionicons
-                  name="flame"
-                  size={20}
-                  color={actionSelected ? "#555" : "#fff"}
-                />
-                <Text
-                  className={`font-bold text-sm ml-1.5 ${
-                    actionSelected ? "text-gray-600" : "text-white"
-                  }`}
-                >
-                  攻撃
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => selectAction("special")}
-                disabled={actionSelected || mySpecialCd > 0}
-                style={{ height: 44 }}
-                className={`rounded-xl flex-row items-center justify-center ${
-                  actionSelected || mySpecialCd > 0
-                    ? "bg-[#1a1a2e] border border-[#2a2a4e]"
-                    : "bg-amber-500/90"
-                }`}
-              >
-                <Ionicons
-                  name="flash"
-                  size={20}
-                  color={actionSelected || mySpecialCd > 0 ? "#555" : "#fff"}
-                />
-                <Text
-                  className={`font-bold text-sm ml-1.5 ${
-                    actionSelected || mySpecialCd > 0
-                      ? "text-gray-600"
-                      : "text-white"
-                  }`}
-                >
-                  必殺技
-                </Text>
-                {mySpecialCd > 0 && (
-                  <Text className="text-gray-600 text-[10px] ml-1">
-                    CT:{mySpecialCd}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </>
-          ) : (
-            <>
-              <TouchableOpacity
-                onPress={() => selectAction("defend")}
-                disabled={actionSelected}
-                style={{ height: 44 }}
-                className={`rounded-xl flex-row items-center justify-center ${
-                  actionSelected
-                    ? "bg-[#1a1a2e] border border-[#2a2a4e]"
-                    : "bg-blue-500/90"
-                }`}
-              >
-                <Ionicons
-                  name="shield"
-                  size={20}
-                  color={actionSelected ? "#555" : "#fff"}
-                />
-                <Text
-                  className={`font-bold text-sm ml-1.5 ${
-                    actionSelected ? "text-gray-600" : "text-white"
-                  }`}
-                >
-                  防御
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => selectAction("counter")}
-                disabled={actionSelected}
-                style={{ height: 44 }}
-                className={`rounded-xl flex-row items-center justify-center ${
-                  actionSelected
-                    ? "bg-[#1a1a2e] border border-[#2a2a4e]"
-                    : "bg-orange-500/90"
-                }`}
-              >
-                <Ionicons
-                  name="flash-outline"
-                  size={20}
-                  color={actionSelected ? "#555" : "#fff"}
-                />
-                <Text
-                  className={`font-bold text-sm ml-1.5 ${
-                    actionSelected ? "text-gray-600" : "text-white"
-                  }`}
-                >
-                  カウンター
-                </Text>
-                <Text
-                  className={`text-[10px] ml-1 ${
-                    actionSelected ? "text-gray-700" : "text-orange-200"
-                  }`}
-                >
-                  30%
-                </Text>
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
       </View>
     </View>
   );
