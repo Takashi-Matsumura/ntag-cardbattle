@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-// カード一覧取得
+// カード一覧取得（tokenは除外して返す）
 export async function GET() {
   const cards = await prisma.card.findMany({
     include: { character: true },
     orderBy: { registeredAt: "desc" },
   });
-  return NextResponse.json(cards);
+  return NextResponse.json(
+    cards.map(({ token: _, ...rest }) => rest)
+  );
 }
 
 // カード登録（モバイルアプリから）
@@ -22,13 +24,13 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 既に登録済みか確認
-  const existing = await prisma.card.findUnique({ where: { id } });
+  // 既に登録済みか確認（登録済みならトークンを返す）
+  const existing = await prisma.card.findUnique({
+    where: { id },
+    include: { character: true },
+  });
   if (existing) {
-    return NextResponse.json(
-      { error: "このカードは既に登録されています" },
-      { status: 409 }
-    );
+    return NextResponse.json({ ...existing, isExisting: true }, { status: 200 });
   }
 
   const card = await prisma.card.create({
@@ -51,7 +53,7 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
-  const card = await prisma.card.update({
+  const { token: _, ...card } = await prisma.card.update({
     where: { id },
     data: { characterId },
     include: { character: true },

@@ -8,6 +8,11 @@ import type {
 interface PlayerSlot {
   socketId: string;
   card: Character | null;
+  cardUid: string | null;
+  cardLevel: number;
+  cardExp: number;
+  cardWins: number;
+  cardLosses: number;
   action: ActionType | null;
   specialCd: number;
 }
@@ -18,6 +23,7 @@ export interface Room {
   playerA: PlayerSlot;
   playerB: PlayerSlot | null;
   turnTimer: ReturnType<typeof setTimeout> | null;
+  turnProcessing: boolean;
 }
 
 class RoomManager {
@@ -45,9 +51,10 @@ class RoomManager {
         currentTurn: 0,
         turnType: "A_attacks",
       },
-      playerA: { socketId, card: null, action: null, specialCd: 0 },
+      playerA: { socketId, card: null, cardUid: null, cardLevel: 1, cardExp: 0, cardWins: 0, cardLosses: 0, action: null, specialCd: 0 },
       playerB: null,
       turnTimer: null,
+      turnProcessing: false,
     };
     this.rooms.set(code, room);
     return room;
@@ -59,7 +66,7 @@ class RoomManager {
     if (!room) return null;
     if (room.playerB) return null; // 満室
 
-    room.playerB = { socketId, card: null, action: null, specialCd: 0 };
+    room.playerB = { socketId, card: null, cardUid: null, cardLevel: 1, cardExp: 0, cardWins: 0, cardLosses: 0, action: null, specialCd: 0 };
     return room;
   }
 
@@ -117,6 +124,19 @@ class RoomManager {
       room.state.turnType === "A_attacks" ? "B_attacks" : "A_attacks";
     room.state.turnType = next;
     return next;
+  }
+
+  // カードUIDが他ルームで使用中か確認
+  isCardUidInUse(cardUid: string): boolean {
+    for (const room of this.rooms.values()) {
+      if (
+        room.playerA.cardUid === cardUid ||
+        room.playerB?.cardUid === cardUid
+      ) {
+        return true;
+      }
+    }
+    return false;
   }
 
   // ルーム削除

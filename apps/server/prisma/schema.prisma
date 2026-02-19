@@ -24,5 +24,10 @@ model Card {
   id           String     @id // NTAG UID
   character    Character? @relation(fields: [characterId], references: [id])
   characterId  Int?
+  level        Int        @default(1)
+  exp          Int        @default(0)
+  totalWins    Int        @default(0)
+  totalLosses  Int        @default(0)
+  token        String     @unique @default(dbgenerated("gen_random_uuid()"))
   registeredAt DateTime   @default(now())
 }

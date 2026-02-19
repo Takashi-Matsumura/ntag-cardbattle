@@ -7,13 +7,15 @@ import type {
   CharacterImageType,
   TurnResult,
   BattleState,
+  BattleEndData,
   ActionType,
   TurnType,
   ResultType,
 } from "@nfc-card-battle/shared";
-import { TURN_TIME_LIMIT } from "@nfc-card-battle/shared";
+import { TURN_TIME_LIMIT, getExpProgress } from "@nfc-card-battle/shared";
 import { socket } from "@/lib/socket";
-import { readNfcUid } from "@/lib/nfc";
+import { readNfcUid, writeNfcData } from "@/lib/nfc";
+import { getCardToken } from "@/lib/card-tokens";
 import { BattleCard } from "@/components/BattleCard";
 import { ActionCardController } from "@/components/ActionCardController";
 
@@ -47,7 +49,9 @@ export default function BattleScreen() {
   const [phase, setPhase] = useState<Phase>("scan");
   const [scanning, setScanning] = useState(false);
   const [myCard, setMyCard] = useState<Character | null>(null);
+  const [myLevel, setMyLevel] = useState(1);
   const [opponentCard, setOpponentCard] = useState<Character | null>(null);
+  const [opponentLevel, setOpponentLevel] = useState(1);
   const [myHp, setMyHp] = useState(0);
   const [opponentHp, setOpponentHp] = useState(0);
   const [turn, setTurn] = useState(0);
@@ -61,6 +65,10 @@ export default function BattleScreen() {
   const [opponentImageType, setOpponentImageType] = useState<CharacterImageType>("idle");
   const [showResult, setShowResult] = useState(false);
   const [resultData, setResultData] = useState<ResultData | null>(null);
+  const [expGained, setExpGained] = useState(0);
+  const [leveledUp, setLeveledUp] = useState(false);
+  const [cardStats, setCardStats] = useState<{ level: number; exp: number; totalWins: number; totalLosses: number } | null>(null);
+  const [nfcWritePhase, setNfcWritePhase] = useState<"idle" | "writing" | "success" | "failed">("idle");
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const myRoleRef = useRef<"A" | "B" | null>(null);
@@ -75,18 +83,20 @@ export default function BattleScreen() {
 
   useEffect(() => {
     // カード登録成功
-    const onCardRegistered = ({ card, role }: { card: Character; role: "A" | "B" }) => {
+    const onCardRegistered = ({ card, role, level }: { card: Character; role: "A" | "B"; level: number }) => {
       setMyCard(card);
       setMyHp(card.hp);
       setMyRole(role);
+      setMyLevel(level);
       myRoleRef.current = role;
       setPhase("waiting");
     };
 
     // 相手カード登録
-    const onOpponentCard = ({ card }: { card: Character }) => {
+    const onOpponentCard = ({ card, level }: { card: Character; level: number }) => {
       setOpponentCard(card);
       setOpponentHp(card.hp);
+      setOpponentLevel(level);
     };
 
     // バトル開始（各ターンの開始）
@@ -239,14 +249,16 @@ export default function BattleScreen() {
     };
 
     // バトル終了
-    const onBattleEnd = ({
-      winner: w,
-    }: {
-      winner: "A" | "B";
-      finalState: BattleState;
-    }) => {
+    const onBattleEnd = (data: BattleEndData) => {
       if (timerRef.current) clearInterval(timerRef.current);
-      setWinner(w);
+      const role = myRoleRef.current;
+      setWinner(data.winner);
+      if (role) {
+        setExpGained(data.expGained[role]);
+        setLeveledUp(data.levelUp[role]);
+        setCardStats(data.cardStats[role]);
+      }
+      setNfcWritePhase("idle");
       setPhase("finished");
     };
 
@@ -293,7 +305,13 @@ export default function BattleScreen() {
         setScanning(false);
         return;
       }
-      socket.emit("register_card", { cardUid: uid });
+      const token = await getCardToken(uid);
+      if (!token) {
+        Alert.alert("エラー", "カードのトークンが見つかりません。マイカード画面で再登録してください");
+        setScanning(false);
+        return;
+      }
+      socket.emit("register_card", { cardUid: uid, token });
     } catch {
       Alert.alert("エラー", "スキャンに失敗しました");
     } finally {
@@ -514,6 +532,7 @@ export default function BattleScreen() {
                 currentHp={myCard.hp}
                 variant="player"
                 imageType="idle"
+                level={myLevel}
               />
             ) : (
               <View className="bg-[#1a1a2e] rounded-2xl p-6 items-center border border-[#2a2a4e]">
@@ -530,6 +549,7 @@ export default function BattleScreen() {
                 currentHp={opponentCard.hp}
                 variant="opponent"
                 imageType="idle"
+                level={opponentLevel}
               />
             ) : (
               <View className="bg-[#1a1a2e] rounded-2xl p-6 items-center border border-[#2a2a4e]">
@@ -556,9 +576,24 @@ export default function BattleScreen() {
     );
   }
 
+  // NFC書き込み
+  const handleNfcWrite = async () => {
+    if (!myCard || !cardStats) return;
+    setNfcWritePhase("writing");
+    const success = await writeNfcData({
+      characterName: myCard.name,
+      level: cardStats.level,
+      exp: cardStats.exp,
+      wins: cardStats.totalWins,
+      losses: cardStats.totalLosses,
+    });
+    setNfcWritePhase(success ? "success" : "failed");
+  };
+
   // ========== Finished Phase ==========
   if (phase === "finished") {
     const isWin = winner === myRole;
+    const expProgress = cardStats ? getExpProgress(cardStats.exp, cardStats.level) : 0;
     return (
       <View className="flex-1 items-center justify-center px-6">
         <View className="bg-[#1a1a2e] rounded-3xl p-8 items-center w-full border border-[#2a2a4e]">
@@ -577,9 +612,78 @@ export default function BattleScreen() {
           <Text className="text-gray-500 mt-2">
             {myCard?.name} vs {opponentCard?.name} ({turn}ターン)
           </Text>
+
+          {/* EXP情報 */}
+          {cardStats && (
+            <View className="w-full mt-5">
+              <View className="flex-row items-center justify-between mb-2">
+                <Text className="text-gray-400 text-sm font-bold">
+                  Lv.{cardStats.level}
+                </Text>
+                <Text className="text-[#6c5ce7] text-sm font-bold">
+                  +{expGained} EXP
+                </Text>
+              </View>
+              {/* EXPバー */}
+              <View className="w-full h-3 bg-[#0f0f1a] rounded-full overflow-hidden">
+                <View
+                  className="h-full bg-[#6c5ce7] rounded-full"
+                  style={{ width: `${Math.min(expProgress * 100, 100)}%` }}
+                />
+              </View>
+              {/* レベルアップ表示 */}
+              {leveledUp && (
+                <View className="flex-row items-center justify-center mt-3 bg-[#6c5ce7]/10 py-2 rounded-xl">
+                  <Ionicons name="star" size={18} color="#6c5ce7" />
+                  <Text className="text-[#6c5ce7] font-bold text-sm ml-1">
+                    レベルアップ！ Lv.{cardStats.level}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* NFC書き込みボタン */}
+          {nfcWritePhase === "idle" && (
+            <TouchableOpacity
+              onPress={handleNfcWrite}
+              className="bg-[#6c5ce7]/10 w-full py-4 rounded-2xl mt-5 border border-[#6c5ce7]/30 flex-row items-center justify-center"
+            >
+              <Ionicons name="phone-portrait-outline" size={20} color="#6c5ce7" />
+              <Text className="text-[#6c5ce7] font-bold text-base ml-2">
+                カードに記録する
+              </Text>
+            </TouchableOpacity>
+          )}
+          {nfcWritePhase === "writing" && (
+            <View className="w-full py-4 rounded-2xl mt-5 bg-[#6c5ce7]/10 border border-[#6c5ce7]/30 items-center">
+              <Ionicons name="radio-outline" size={20} color="#6c5ce7" />
+              <Text className="text-[#6c5ce7] text-sm mt-1">
+                カードをかざしてください...
+              </Text>
+            </View>
+          )}
+          {nfcWritePhase === "success" && (
+            <View className="w-full py-4 rounded-2xl mt-5 bg-emerald-500/10 border border-emerald-500/30 items-center">
+              <Ionicons name="checkmark-circle" size={20} color="#10b981" />
+              <Text className="text-emerald-400 text-sm mt-1">記録完了！</Text>
+            </View>
+          )}
+          {nfcWritePhase === "failed" && (
+            <TouchableOpacity
+              onPress={handleNfcWrite}
+              className="w-full py-4 rounded-2xl mt-5 bg-red-500/10 border border-red-500/30 items-center"
+            >
+              <Ionicons name="alert-circle" size={20} color="#e94560" />
+              <Text className="text-red-400 text-sm mt-1">
+                失敗しました（タップでリトライ）
+              </Text>
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity
             onPress={() => router.back()}
-            className="bg-[#0f0f1a] w-full py-4 rounded-2xl mt-6 border border-[#2a2a4e] flex-row items-center justify-center"
+            className="bg-[#0f0f1a] w-full py-4 rounded-2xl mt-3 border border-[#2a2a4e] flex-row items-center justify-center"
           >
             <Ionicons name="home-outline" size={20} color="#888" />
             <Text className="text-gray-400 font-bold text-base ml-2">
@@ -646,6 +750,7 @@ export default function BattleScreen() {
               currentHp={opponentHp}
               variant="opponent"
               imageType={opponentImageType}
+              level={opponentLevel}
             />
           </View>
         </View>
@@ -816,6 +921,7 @@ export default function BattleScreen() {
             specialCooldown={mySpecialCd}
             actionSelected={actionSelected}
             onActionConfirm={selectAction}
+            level={myLevel}
           />
         )}
       </View>

@@ -4,8 +4,14 @@ import type {
   ServerToClientEvents,
   Character,
   TurnType,
+  BattleEndData,
 } from "@nfc-card-battle/shared";
-import { TURN_TIME_LIMIT } from "@nfc-card-battle/shared";
+import {
+  TURN_TIME_LIMIT,
+  getEffectiveStats,
+  calcLevel,
+  calcExpGain,
+} from "@nfc-card-battle/shared";
 import { roomManager, type Room } from "./room-manager";
 import { resolveTurnBased } from "./engine";
 import { prisma } from "../lib/prisma";
@@ -63,7 +69,11 @@ function startTurn(io: IO, room: Room) {
 }
 
 // ターン処理
-function processTurn(io: IO, room: Room) {
+async function processTurn(io: IO, room: Room) {
+  // 二重実行防止
+  if (room.turnProcessing) return;
+  room.turnProcessing = true;
+
   if (room.turnTimer) {
     clearTimeout(room.turnTimer);
     room.turnTimer = null;
@@ -73,8 +83,10 @@ function processTurn(io: IO, room: Room) {
     !room.state.playerA ||
     !room.state.playerB ||
     !room.playerB
-  )
+  ) {
+    room.turnProcessing = false;
     return;
+  }
 
   const turnType = room.state.turnType;
   const attackerRole = turnType === "A_attacks" ? "A" : "B";
@@ -84,7 +96,10 @@ function processTurn(io: IO, room: Room) {
   const attackerState = attackerRole === "A" ? room.state.playerA : room.state.playerB;
   const defenderState = attackerRole === "A" ? room.state.playerB : room.state.playerA;
 
-  if (!attackerSlot || !defenderSlot || !attackerState || !defenderState) return;
+  if (!attackerSlot || !defenderSlot || !attackerState || !defenderState) {
+    room.turnProcessing = false;
+    return;
+  }
 
   const result = resolveTurnBased(
     room.state.currentTurn,
@@ -130,13 +145,93 @@ function processTurn(io: IO, room: Room) {
       winner = aAlive ? "A" : "B";
     }
 
-    const endData = { winner, finalState: room.state };
+    // EXP計算（戦力差で変動）+ DB保存
+    const statsA = room.state.playerA.card;
+    const statsB = room.state.playerB.card;
+    const expA = calcExpGain(winner === "A", statsA, statsB);
+    const expB = calcExpGain(winner === "B", statsB, statsA);
+
+    let updatedA: { level: number; exp: number; totalWins: number; totalLosses: number } | null = null;
+    let updatedB: { level: number; exp: number; totalWins: number; totalLosses: number } | null = null;
+
+    try {
+      const [resultA, resultB] = await Promise.all([
+        room.playerA.cardUid
+          ? prisma.card.update({
+              where: { id: room.playerA.cardUid },
+              data: {
+                exp: { increment: expA },
+                totalWins: { increment: winner === "A" ? 1 : 0 },
+                totalLosses: { increment: winner === "A" ? 0 : 1 },
+              },
+            }).then((c) => {
+              const newLevel = calcLevel(c.exp);
+              if (newLevel !== c.level) {
+                return prisma.card.update({
+                  where: { id: c.id },
+                  data: { level: newLevel },
+                });
+              }
+              return c;
+            })
+          : null,
+        room.playerB.cardUid
+          ? prisma.card.update({
+              where: { id: room.playerB.cardUid },
+              data: {
+                exp: { increment: expB },
+                totalWins: { increment: winner === "B" ? 1 : 0 },
+                totalLosses: { increment: winner === "B" ? 0 : 1 },
+              },
+            }).then((c) => {
+              const newLevel = calcLevel(c.exp);
+              if (newLevel !== c.level) {
+                return prisma.card.update({
+                  where: { id: c.id },
+                  data: { level: newLevel },
+                });
+              }
+              return c;
+            })
+          : null,
+      ]);
+      updatedA = resultA;
+      updatedB = resultB;
+    } catch (err) {
+      console.error("バトル結果のDB保存に失敗:", err);
+    }
+
+    const endData: BattleEndData = {
+      winner,
+      finalState: room.state,
+      expGained: { A: updatedA ? expA : 0, B: updatedB ? expB : 0 },
+      levelUp: {
+        A: updatedA ? updatedA.level > room.playerA.cardLevel : false,
+        B: updatedB ? updatedB.level > room.playerB.cardLevel : false,
+      },
+      cardStats: {
+        A: {
+          level: updatedA?.level ?? room.playerA.cardLevel,
+          exp: updatedA?.exp ?? room.playerA.cardExp,
+          totalWins: updatedA?.totalWins ?? room.playerA.cardWins,
+          totalLosses: updatedA?.totalLosses ?? room.playerA.cardLosses,
+        },
+        B: {
+          level: updatedB?.level ?? room.playerB.cardLevel,
+          exp: updatedB?.exp ?? room.playerB.cardExp,
+          totalWins: updatedB?.totalWins ?? room.playerB.cardWins,
+          totalLosses: updatedB?.totalLosses ?? room.playerB.cardLosses,
+        },
+      },
+    };
+
     io.to(room.playerA.socketId).emit("battle_end", endData);
     io.to(room.playerB.socketId).emit("battle_end", endData);
 
     roomManager.removeRoom(room.code);
   } else {
     // 次のターンへ
+    room.turnProcessing = false;
     setTimeout(() => startTurn(io, room), 2000);
   }
 }
@@ -177,10 +272,16 @@ export function setupSocketHandlers(io: IO) {
     });
 
     // カード登録（バトル前）
-    socket.on("register_card", async ({ cardUid }) => {
+    socket.on("register_card", async ({ cardUid, token }) => {
       const room = roomManager.findRoomBySocket(socket.id);
       if (!room) {
         socket.emit("error", { message: "ルームに参加していません" });
+        return;
+      }
+
+      // 同一カードが他ルームで使用中でないか確認
+      if (roomManager.isCardUidInUse(cardUid)) {
+        socket.emit("error", { message: "このカードは現在別のバトルで使用中です" });
         return;
       }
 
@@ -197,26 +298,50 @@ export function setupSocketHandlers(io: IO) {
         return;
       }
 
+      // トークン検証（所有者確認）
+      if (card.token !== token) {
+        socket.emit("error", { message: "カードの認証に失敗しました" });
+        return;
+      }
+
+      // レベル補正を適用
+      const stats = getEffectiveStats(
+        card.character.hp,
+        card.character.attack,
+        card.character.defense,
+        card.level
+      );
+
       const character: Character = {
         id: card.character.id,
         name: card.character.name,
-        hp: card.character.hp,
-        attack: card.character.attack,
-        defense: card.character.defense,
+        hp: stats.hp,
+        attack: stats.attack,
+        defense: stats.defense,
         imageUrl: card.character.imageUrl,
       };
 
       const role = roomManager.getPlayerRole(room, socket.id);
       if (role === "A") {
         room.playerA.card = character;
+        room.playerA.cardUid = cardUid;
+        room.playerA.cardLevel = card.level;
+        room.playerA.cardExp = card.exp;
+        room.playerA.cardWins = card.totalWins;
+        room.playerA.cardLosses = card.totalLosses;
         room.state.playerA = { card: character, hp: character.hp };
       } else if (role === "B" && room.playerB) {
         room.playerB.card = character;
+        room.playerB.cardUid = cardUid;
+        room.playerB.cardLevel = card.level;
+        room.playerB.cardExp = card.exp;
+        room.playerB.cardWins = card.totalWins;
+        room.playerB.cardLosses = card.totalLosses;
         room.state.playerB = { card: character, hp: character.hp };
       }
 
-      // 自分にカード情報 + role送信
-      socket.emit("card_registered", { card: character, role: role! });
+      // 自分にカード情報 + role + level送信
+      socket.emit("card_registered", { card: character, role: role!, level: card.level });
 
       // 相手にカード情報通知
       const opponentId =
@@ -226,6 +351,7 @@ export function setupSocketHandlers(io: IO) {
       if (opponentId) {
         io.to(opponentId).emit("opponent_card_registered", {
           card: character,
+          level: card.level,
         });
       }
 

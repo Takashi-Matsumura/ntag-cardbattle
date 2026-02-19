@@ -22,6 +22,10 @@ export interface Character {
 export interface Card {
   id: string; // NTAG UID
   character: Character | null;
+  level: number;
+  exp: number;
+  totalWins: number;
+  totalLosses: number;
 }
 
 // --- バトル関連 ---
@@ -62,11 +66,32 @@ export interface BattleState {
   turnType: TurnType;
 }
 
+// --- バトル終了データ ---
+export interface BattleEndData {
+  winner: "A" | "B";
+  finalState: BattleState;
+  expGained: { A: number; B: number };
+  levelUp: { A: boolean; B: boolean };
+  cardStats: {
+    A: { level: number; exp: number; totalWins: number; totalLosses: number };
+    B: { level: number; exp: number; totalWins: number; totalLosses: number };
+  };
+}
+
+// --- NFC書き込みデータ ---
+export interface NfcCardData {
+  characterName: string;
+  level: number;
+  exp: number;
+  wins: number;
+  losses: number;
+}
+
 // --- Socket.io イベント ---
 export interface ClientToServerEvents {
   create_room: () => void;
   join_room: (data: { roomCode: string }) => void;
-  register_card: (data: { cardUid: string }) => void;
+  register_card: (data: { cardUid: string; token: string }) => void;
   select_action: (data: { action: ActionType }) => void;
   leave_room: () => void;
 }
@@ -74,8 +99,8 @@ export interface ClientToServerEvents {
 export interface ServerToClientEvents {
   room_created: (data: { roomCode: string }) => void;
   opponent_joined: () => void;
-  card_registered: (data: { card: Character; role: "A" | "B" }) => void;
-  opponent_card_registered: (data: { card: Character }) => void;
+  card_registered: (data: { card: Character; role: "A" | "B"; level: number }) => void;
+  opponent_card_registered: (data: { card: Character; level: number }) => void;
   battle_start: (data: {
     turn: number;
     timeLimit: number;
@@ -84,7 +109,7 @@ export interface ServerToClientEvents {
     specialCd: number;
   }) => void;
   turn_result: (data: TurnResult) => void;
-  battle_end: (data: { winner: "A" | "B"; finalState: BattleState }) => void;
+  battle_end: (data: BattleEndData) => void;
   opponent_disconnected: () => void;
   error: (data: { message: string }) => void;
 }

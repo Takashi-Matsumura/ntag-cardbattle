@@ -3,8 +3,9 @@ import { View, Text, TouchableOpacity, Alert, FlatList, Image } from "react-nati
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
 import type { Card } from "@nfc-card-battle/shared";
-import { getCharacterImageUrl } from "@nfc-card-battle/shared";
+import { getCharacterImageUrl, getExpProgress, getEffectiveStats } from "@nfc-card-battle/shared";
 import { initNfc, readNfcUid } from "@/lib/nfc";
+import { saveCardToken } from "@/lib/card-tokens";
 
 const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL || "http://localhost:3000";
 
@@ -56,10 +57,17 @@ export default function MyCardScreen() {
         body: JSON.stringify({ id: uid }),
       });
 
-      if (res.status === 409) {
-        Alert.alert("登録済み", "このカードは既に登録されています");
-      } else if (res.ok) {
-        Alert.alert("成功", `カード ${uid} を登録しました`);
+      if (res.ok) {
+        const data = await res.json();
+        // トークンを端末に安全に保存
+        if (data.token) {
+          await saveCardToken(uid, data.token);
+        }
+        if (data.isExisting) {
+          Alert.alert("登録済み", "このカードは既に登録されています");
+        } else {
+          Alert.alert("成功", `カード ${uid} を登録しました`);
+        }
         fetchCards();
       } else {
         Alert.alert("エラー", "カード登録に失敗しました");
@@ -75,6 +83,10 @@ export default function MyCardScreen() {
     const imageUrl = item.character
       ? getCharacterImageUrl(SERVER_URL, item.character.id, "idle")
       : null;
+    const expProgress = getExpProgress(item.exp, item.level);
+    const effectiveStats = item.character
+      ? getEffectiveStats(item.character.hp, item.character.attack, item.character.defense, item.level)
+      : null;
 
     return (
       <View className="bg-[#1a1a2e] rounded-2xl p-4 mb-3 border border-[#2a2a4e] flex-row">
@@ -88,39 +100,66 @@ export default function MyCardScreen() {
                 color={item.character ? "#6c5ce7" : "#555"}
               />
             </View>
-            <View>
-              {item.character ? (
-                <Text className="text-white text-base font-bold">
-                  {item.character.name}
-                </Text>
-              ) : (
-                <Text className="text-amber-400 text-sm font-medium">
-                  キャラクター未割当
-                </Text>
-              )}
+            <View className="flex-1">
+              <View className="flex-row items-center">
+                {item.character ? (
+                  <Text className="text-white text-base font-bold">
+                    {item.character.name}
+                  </Text>
+                ) : (
+                  <Text className="text-amber-400 text-sm font-medium">
+                    キャラクター未割当
+                  </Text>
+                )}
+                {item.character && (
+                  <View className="bg-[#6c5ce7]/20 px-2 py-0.5 rounded-md ml-2">
+                    <Text className="text-[#6c5ce7] text-xs font-bold">
+                      Lv.{item.level}
+                    </Text>
+                  </View>
+                )}
+              </View>
               <Text className="text-gray-600 text-xs font-mono mt-0.5">
                 {item.id}
               </Text>
             </View>
           </View>
           {item.character && (
-            <View className="flex-row mt-3 gap-3 ml-13">
-              <View className="bg-red-500/10 px-3 py-1.5 rounded-lg">
-                <Text className="text-red-400 text-xs font-bold">
-                  HP {item.character.hp}
-                </Text>
+            <>
+              {/* EXPバー */}
+              <View className="mt-2.5 ml-13">
+                <View className="flex-row items-center justify-between mb-1">
+                  <Text className="text-gray-600 text-[10px]">EXP</Text>
+                  <Text className="text-gray-600 text-[10px]">
+                    {item.totalWins}勝 {item.totalLosses}敗
+                  </Text>
+                </View>
+                <View className="w-full h-1.5 bg-[#0f0f1a] rounded-full overflow-hidden">
+                  <View
+                    className="h-full bg-[#6c5ce7] rounded-full"
+                    style={{ width: `${Math.min(expProgress * 100, 100)}%` }}
+                  />
+                </View>
               </View>
-              <View className="bg-orange-500/10 px-3 py-1.5 rounded-lg">
-                <Text className="text-orange-400 text-xs font-bold">
-                  攻撃 {item.character.attack}
-                </Text>
+              {/* ステータス（レベル補正後） */}
+              <View className="flex-row mt-2.5 gap-3 ml-13">
+                <View className="bg-red-500/10 px-3 py-1.5 rounded-lg">
+                  <Text className="text-red-400 text-xs font-bold">
+                    HP {effectiveStats?.hp}
+                  </Text>
+                </View>
+                <View className="bg-orange-500/10 px-3 py-1.5 rounded-lg">
+                  <Text className="text-orange-400 text-xs font-bold">
+                    攻撃 {effectiveStats?.attack}
+                  </Text>
+                </View>
+                <View className="bg-blue-500/10 px-3 py-1.5 rounded-lg">
+                  <Text className="text-blue-400 text-xs font-bold">
+                    防御 {effectiveStats?.defense}
+                  </Text>
+                </View>
               </View>
-              <View className="bg-blue-500/10 px-3 py-1.5 rounded-lg">
-                <Text className="text-blue-400 text-xs font-bold">
-                  防御 {item.character.defense}
-                </Text>
-              </View>
-            </View>
+            </>
           )}
         </View>
 

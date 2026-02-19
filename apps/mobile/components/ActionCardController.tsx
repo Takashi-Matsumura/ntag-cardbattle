@@ -13,6 +13,7 @@ interface ActionCardControllerProps {
   specialCooldown: number;
   actionSelected: boolean;
   onActionConfirm: (action: "attack" | "special" | "defend" | "counter") => void;
+  level?: number;
 }
 
 interface ActionDef {
@@ -47,6 +48,7 @@ export function ActionCardController({
   specialCooldown,
   actionSelected,
   onActionConfirm,
+  level,
 }: ActionCardControllerProps) {
   const [snappedDir, setSnappedDir] = useState<"left" | "right" | null>(null);
   const [cardLayout, setCardLayout] = useState({ width: 0, height: 0 });
@@ -251,6 +253,7 @@ export function ActionCardController({
             currentHp={currentHp}
             variant="player"
             imageType={imageType}
+            level={level}
           />
         </Animated.View>
 

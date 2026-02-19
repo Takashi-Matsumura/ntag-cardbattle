@@ -26,6 +26,7 @@ interface BattleCardProps {
   isCompact?: boolean;
   label?: string;
   imageType?: CharacterImageType;
+  level?: number;
 }
 
 const VARIANT_CONFIG = {
@@ -58,6 +59,7 @@ export function BattleCard({
   isCompact = false,
   label,
   imageType = "idle",
+  level,
 }: BattleCardProps) {
   const config = VARIANT_CONFIG[variant];
   const displayLabel = label ?? config.defaultLabel;
@@ -123,6 +125,11 @@ export function BattleCard({
           <Text className="text-white font-bold text-sm ml-2">
             {character.name}
           </Text>
+          {level != null && (
+            <View className="bg-white/20 px-1.5 py-0.5 rounded ml-2">
+              <Text className="text-white text-[10px] font-bold">Lv.{level}</Text>
+            </View>
+          )}
         </View>
         <Text className="text-white/70 text-xs">{displayLabel}</Text>
       </View>
