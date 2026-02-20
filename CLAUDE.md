@@ -59,6 +59,25 @@ pnpm db:studio                # Prisma Studio起動
 - **タイムアウト**: 攻撃側→ペナルティ（防御側が反撃）、防御側→ノーガード（防御力無視フルダメージ）
 - **勝敗**: サーバーが `role` ("A"/"B") を各プレイヤーに送信し、`winner === myRole` で正しく判定
 
+### 経験値・レベルシステム
+
+- **レベル**: 最大Lv20、累積EXPで算出（Lv N到達 = N² × 10 EXP）
+- **ステータス補正**: レベルごとに+2%（倍率 = 1 + (Lv-1) × 0.02）
+- **EXP獲得**: 勝利30 / 敗北10をベースに、相手との戦力差で変動（最低5、最大50）
+- **バトル終了画面**: EXPバー・レベルアップ表示・NFC書き込みUI
+
+### トークン認証
+
+- カード登録時にサーバがUUIDトークンを発行
+- モバイル側でSecureStoreに保存（`card_token_{UID}`）
+- バトル参加時にトークンを送信してカード所有権を検証
+- 同一UIDの同時使用を防止
+
+### NFC書き込み
+
+- バトル終了後、勝敗に関わらずカードへ記念データ書き込み（任意）
+- `apps/mobile/lib/nfc.ts` の `writeNfcData()` で実装
+
 ### マッチングフロー
 
 1. 「対戦」ボタン → ルーム自動作成 + QRコード表示
@@ -86,9 +105,11 @@ pnpm db:studio                # Prisma Studio起動
 - `apps/mobile/app/battle/[roomId].tsx` — 対人バトル（ターン制・Socket.io）
 - `apps/mobile/components/BattleCard.tsx` — バトルカードコンポーネント
 - `apps/mobile/components/HpBar.tsx` — HPバーコンポーネント
-- `apps/mobile/lib/nfc.ts` — NFC読み取りユーティリティ
+- `apps/mobile/lib/nfc.ts` — NFC読み取り・書き込みユーティリティ
+- `apps/mobile/lib/card-tokens.ts` — カードトークン管理（SecureStore）
 - `apps/mobile/lib/socket.ts` — Socket.ioクライアント
 - `packages/shared/src/types.ts` — 共有型定義（TurnResult, TurnType等）
-- `packages/shared/src/constants.ts` — 共有定数（バトルパラメータ）
+- `packages/shared/src/constants.ts` — 共有定数（バトルパラメータ・経験値・レベル）
 - `packages/shared/src/damage.ts` — ダメージ変動計算
+- `packages/shared/src/level.ts` — レベル・経験値計算（EXP算出・ステータス補正）
 - `packages/shared/src/image.ts` — キャラクター画像URL生成

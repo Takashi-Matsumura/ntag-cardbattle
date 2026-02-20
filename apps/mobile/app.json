@@ -31,7 +31,8 @@
         {
           "nfcPermission": "NFCカードを読み取ってバトルに使用します"
         }
-      ]
+      ],
+      "expo-secure-store"
     ]
   }
 }
