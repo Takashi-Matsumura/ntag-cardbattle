@@ -7,13 +7,15 @@ import { getCharacterImageUrl, getExpProgress, getEffectiveStats } from "@nfc-ca
 import { initNfc, readNfcUid } from "@/lib/nfc";
 import { saveCardToken } from "@/lib/card-tokens";
 import { getSettings, type AppSettings } from "@/lib/settings";
+import { getAllLocalCards, getCharacterBase, type LocalCardData } from "@/lib/local-cards";
 
 // ngrok無料版のブラウザ警告をスキップ
 const fetchHeaders = { "ngrok-skip-browser-warning": "true" };
 
 export default function MyCardScreen() {
   const [nfcSupported, setNfcSupported] = useState<boolean | null>(null);
-  const [cards, setCards] = useState<Card[]>([]);
+  const [onlineCards, setOnlineCards] = useState<Card[]>([]);
+  const [localCards, setLocalCards] = useState<LocalCardData[]>([]);
   const [scanning, setScanning] = useState(false);
   const [settings, setSettings] = useState<AppSettings>({ onlineMode: false, serverUrl: "" });
 
@@ -27,28 +29,34 @@ export default function MyCardScreen() {
       getSettings().then((s) => {
         setSettings(s);
         if (s.onlineMode && s.serverUrl) {
-          fetchCards(s.serverUrl);
+          fetchOnlineCards(s.serverUrl);
         } else {
-          setCards([]);
+          setOnlineCards([]);
         }
       });
+      loadLocalCards();
     }, [])
   );
 
-  // 登録済みカード一覧取得
-  const fetchCards = useCallback(async (serverUrl: string) => {
+  const loadLocalCards = async () => {
+    const all = await getAllLocalCards();
+    setLocalCards(all);
+  };
+
+  // サーバーからカード一覧取得
+  const fetchOnlineCards = useCallback(async (serverUrl: string) => {
     try {
       const res = await fetch(`${serverUrl}/api/cards`, {
         headers: fetchHeaders,
       });
       const data = await res.json();
-      setCards(data);
+      setOnlineCards(data);
     } catch {
       // オフライン時は無視
     }
   }, []);
 
-  // NFCスキャン → カード登録
+  // NFCスキャン → サーバーにカード登録
   const scanAndRegister = async () => {
     if (!settings.serverUrl) return;
     setScanning(true);
@@ -67,7 +75,6 @@ export default function MyCardScreen() {
 
       if (res.ok) {
         const data = await res.json();
-        // トークンを端末に安全に保存
         if (data.token) {
           await saveCardToken(uid, data.token);
         }
@@ -76,7 +83,7 @@ export default function MyCardScreen() {
         } else {
           Alert.alert("成功", `カード ${uid} を登録しました`);
         }
-        fetchCards(settings.serverUrl);
+        fetchOnlineCards(settings.serverUrl);
       } else {
         Alert.alert("エラー", "カード登録に失敗しました");
       }
@@ -87,7 +94,79 @@ export default function MyCardScreen() {
     }
   };
 
-  const renderCard = ({ item }: { item: Card }) => {
+  // ローカルカード表示用
+  const renderLocalCard = ({ item }: { item: LocalCardData }) => {
+    const chara = getCharacterBase(item.characterId);
+    const stats = chara
+      ? getEffectiveStats(chara.hp, chara.attack, chara.defense, item.level)
+      : null;
+    const progress = getExpProgress(item.exp, item.level);
+
+    return (
+      <View className="bg-[#1a1a2e] rounded-2xl p-4 mb-3 border border-[#2a2a4e]">
+        <View className="flex-row items-center">
+          <View className="w-10 h-10 rounded-full bg-[#6c5ce7]/20 items-center justify-center mr-3">
+            <Ionicons name="shield-checkmark" size={20} color="#6c5ce7" />
+          </View>
+          <View className="flex-1">
+            <View className="flex-row items-center">
+              <Text className="text-white text-base font-bold">
+                {chara?.name ?? "???"}
+              </Text>
+              <View className="bg-[#6c5ce7]/20 px-2 py-0.5 rounded-md ml-2">
+                <Text className="text-[#6c5ce7] text-xs font-bold">
+                  Lv.{item.level}
+                </Text>
+              </View>
+            </View>
+            <Text className="text-gray-600 text-xs font-mono mt-0.5">
+              {item.cardUid}
+            </Text>
+          </View>
+        </View>
+
+        {/* EXPバー */}
+        <View className="mt-2.5 ml-13">
+          <View className="flex-row items-center justify-between mb-1">
+            <Text className="text-gray-600 text-[10px]">EXP</Text>
+            <Text className="text-gray-600 text-[10px]">
+              {item.totalWins}勝 {item.totalLosses}敗
+            </Text>
+          </View>
+          <View className="w-full h-1.5 bg-[#0f0f1a] rounded-full overflow-hidden">
+            <View
+              className="h-full bg-[#6c5ce7] rounded-full"
+              style={{ width: `${Math.min(progress * 100, 100)}%` }}
+            />
+          </View>
+        </View>
+
+        {/* ステータス */}
+        {stats && (
+          <View className="flex-row mt-2.5 gap-3 ml-13">
+            <View className="bg-red-500/10 px-3 py-1.5 rounded-lg">
+              <Text className="text-red-400 text-xs font-bold">
+                HP {stats.hp}
+              </Text>
+            </View>
+            <View className="bg-orange-500/10 px-3 py-1.5 rounded-lg">
+              <Text className="text-orange-400 text-xs font-bold">
+                攻撃 {stats.attack}
+              </Text>
+            </View>
+            <View className="bg-blue-500/10 px-3 py-1.5 rounded-lg">
+              <Text className="text-blue-400 text-xs font-bold">
+                防御 {stats.defense}
+              </Text>
+            </View>
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  // オンラインカード表示用
+  const renderOnlineCard = ({ item }: { item: Card }) => {
     const imageUrl = item.character
       ? getCharacterImageUrl(settings.serverUrl, item.character.id, "idle")
       : null;
@@ -191,21 +270,40 @@ export default function MyCardScreen() {
     );
   };
 
-  // オフライン時のメッセージ
+  // オフライン時: ローカルカード一覧
   if (!settings.onlineMode) {
     return (
-      <View className="flex-1 items-center justify-center px-6">
-        <Ionicons name="cloud-offline-outline" size={48} color="#2a2a4e" />
-        <Text className="text-gray-500 text-base mt-4 text-center">
-          オンラインモードを有効にすると{"\n"}サーバーのカード情報が表示されます
-        </Text>
-        <Text className="text-gray-600 text-xs mt-2">
-          設定タブからオンラインモードをONにしてください
-        </Text>
+      <View className="flex-1 px-6 pt-4">
+        {/* カード一覧ヘッダ */}
+        <View className="flex-row items-center mb-3">
+          <Ionicons name="layers-outline" size={16} color="#555" />
+          <Text className="text-gray-500 ml-1.5 text-sm">
+            登録済みカード ({localCards.length})
+          </Text>
+        </View>
+
+        <FlatList
+          data={localCards}
+          keyExtractor={(item) => item.cardUid}
+          renderItem={renderLocalCard}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <View className="items-center py-16">
+              <Ionicons name="card-outline" size={48} color="#2a2a4e" />
+              <Text className="text-gray-600 text-sm mt-3">
+                カードが登録されていません
+              </Text>
+              <Text className="text-gray-700 text-xs mt-1">
+                設定タブからカードを登録してください
+              </Text>
+            </View>
+          }
+        />
       </View>
     );
   }
 
+  // オンライン時: サーバーカード一覧
   return (
     <View className="flex-1 px-6 pt-4">
       {/* NFC状態 */}
@@ -240,15 +338,15 @@ export default function MyCardScreen() {
       <View className="flex-row items-center mb-3">
         <Ionicons name="layers-outline" size={16} color="#555" />
         <Text className="text-gray-500 ml-1.5 text-sm">
-          登録済みカード ({cards.length})
+          登録済みカード ({onlineCards.length})
         </Text>
       </View>
 
       {/* カード一覧 */}
       <FlatList
-        data={cards}
+        data={onlineCards}
         keyExtractor={(item) => item.id}
-        renderItem={renderCard}
+        renderItem={renderOnlineCard}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           <View className="items-center py-16">

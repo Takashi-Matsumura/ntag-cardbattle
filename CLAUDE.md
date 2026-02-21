@@ -137,7 +137,7 @@ Device A (Host/エンジン) ←→ MultipeerConnectivity ←→ Device B (Guest
 - `apps/server/src/game/engine.ts` — shared/engine.tsのre-export
 - `apps/server/src/game/room-manager.ts` — ルーム管理（ターン状態・クールダウン管理）
 - `apps/server/src/game/events.ts` — Socket.ioイベントハンドラ（ターン制フロー）
-- `apps/mobile/app/battle/tutorial.tsx` — チュートリアルバトル（ローカル処理）
+- `apps/mobile/app/battle/tutorial.tsx` — チュートリアルバトル（オフライン: ローカルカード使用 / オンライン: サーバー使用）
 - `apps/mobile/app/battle/[roomId].tsx` — オンライン対人バトル（Socket.ioトランスポート）
 - `apps/mobile/app/battle/local.tsx` — P2Pマッチング画面（ホスト/ゲスト選択→ピア検出）
 - `apps/mobile/app/battle/p2p.tsx` — P2Pバトル画面（MultipeerConnectivity）

@@ -115,7 +115,25 @@ export default function SettingsScreen() {
       }
       const existing = await getLocalCard(uid);
       if (existing) {
-        Alert.alert("登録済み", "このカードは既に登録されています");
+        const existingChara = getCharacterBase(existing.characterId);
+        Alert.alert(
+          "登録済みカード",
+          `このカードには「${existingChara?.name ?? "???"}」(Lv.${existing.level}) が登録されています。\n上書きして再ガチャしますか？`,
+          [
+            { text: "キャンセル", style: "cancel" },
+            {
+              text: "上書き登録",
+              style: "destructive",
+              onPress: async () => {
+                await removeLocalCard(uid);
+                const newCard = await autoRegisterCard(uid);
+                const newChara = getCharacterBase(newCard.characterId);
+                Alert.alert("登録完了", `「${newChara?.name ?? "???"}」が割り当てられました！`);
+                await loadCards();
+              },
+            },
+          ]
+        );
         return;
       }
       const card = await autoRegisterCard(uid);

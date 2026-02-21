@@ -17,8 +17,10 @@ import {
 import { readNfcUid } from "@/lib/nfc";
 import { BattleCard } from "@/components/BattleCard";
 import { ActionCardController } from "@/components/ActionCardController";
+import { getSettings } from "@/lib/settings";
+import { getLocalCard, getCharacterBase } from "@/lib/local-cards";
+import { CHARACTERS } from "@nfc-card-battle/shared";
 
-const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL || "http://localhost:3000";
 const fetchHeaders = { "ngrok-skip-browser-warning": "true" };
 
 type Phase = "scan" | "intro" | "battle" | "finished";
@@ -184,6 +186,25 @@ export default function TutorialScreen() {
   const shakeAnim = useRef(new Animated.Value(0)).current;
   const fieldAnim = useRef(new Animated.Value(0)).current;
 
+  // CharacterBase + id → Character変換
+  const toCharacter = (id: number, base: { name: string; hp: number; attack: number; defense: number }): Character => ({
+    id,
+    name: base.name,
+    hp: base.hp,
+    attack: base.attack,
+    defense: base.defense,
+    imageUrl: null,
+  });
+
+  // CPU相手をランダム選出（自分以外）
+  const pickCpu = (excludeId: number): Character => {
+    const candidates = CHARACTERS.map((c, i) => ({ id: i + 1, ...c })).filter((c) => c.id !== excludeId);
+    const pick = candidates.length > 0
+      ? candidates[Math.floor(Math.random() * candidates.length)]
+      : { id: 1, ...CHARACTERS[0] };
+    return toCharacter(pick.id, pick);
+  };
+
   // --- NFCスキャン ---
   const scanCard = async () => {
     setScanning(true);
@@ -195,41 +216,59 @@ export default function TutorialScreen() {
         return;
       }
 
-      const cardRes = await fetch(`${SERVER_URL}/api/cards`, {
-        headers: fetchHeaders,
-      });
-      const cards = await cardRes.json();
-      const myCard = cards.find((c: { id: string }) => c.id === uid);
+      const settings = await getSettings();
 
-      if (!myCard || !myCard.character) {
-        Alert.alert(
-          "エラー",
-          "このカードは未登録またはキャラクターが割り当てられていません"
-        );
-        setScanning(false);
-        return;
+      if (settings.onlineMode && settings.serverUrl) {
+        // オンライン: サーバーからカードデータ取得
+        const cardRes = await fetch(`${settings.serverUrl}/api/cards`, {
+          headers: fetchHeaders,
+        });
+        const cards = await cardRes.json();
+        const myCard = cards.find((c: { id: string }) => c.id === uid);
+
+        if (!myCard || !myCard.character) {
+          Alert.alert("エラー", "このカードは未登録またはキャラクターが割り当てられていません");
+          setScanning(false);
+          return;
+        }
+
+        setPlayerChar(myCard.character);
+        setMyHp(myCard.character.hp);
+
+        const cpuPick = pickCpu(myCard.character.id);
+        setCpuChar(cpuPick);
+        setCpuHp(cpuPick.hp);
+      } else {
+        // オフライン: ローカルカードデータ使用
+        const localCard = await getLocalCard(uid);
+        if (!localCard) {
+          Alert.alert(
+            "未登録カード",
+            "このカードは登録されていません。\n設定画面の「カード登録（ガチャ）」で先にカードを登録してください。"
+          );
+          setScanning(false);
+          return;
+        }
+
+        const base = getCharacterBase(localCard.characterId);
+        if (!base) {
+          Alert.alert("エラー", "キャラクターデータが見つかりません");
+          setScanning(false);
+          return;
+        }
+
+        const player = toCharacter(localCard.characterId, base);
+        setPlayerChar(player);
+        setMyHp(base.hp);
+
+        const cpuPick = pickCpu(localCard.characterId);
+        setCpuChar(cpuPick);
+        setCpuHp(cpuPick.hp);
       }
 
-      setPlayerChar(myCard.character);
-      setMyHp(myCard.character.hp);
-
-      const charsRes = await fetch(`${SERVER_URL}/api/characters`, {
-        headers: fetchHeaders,
-      });
-      const characters: Character[] = await charsRes.json();
-      const candidates = characters.filter(
-        (c) => c.id !== myCard.character.id
-      );
-      const cpuPick =
-        candidates.length > 0
-          ? candidates[Math.floor(Math.random() * candidates.length)]
-          : characters[Math.floor(Math.random() * characters.length)];
-
-      setCpuChar(cpuPick);
-      setCpuHp(cpuPick.hp);
       setPhase("intro");
     } catch {
-      Alert.alert("エラー", "サーバに接続できません");
+      Alert.alert("エラー", "カードの読み取りに失敗しました");
     } finally {
       setScanning(false);
     }
