@@ -1,14 +1,19 @@
 import { useEffect } from "react";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { socket } from "@/lib/socket";
+import { getSettings } from "@/lib/settings";
+import { connectSocket, disconnectSocket } from "@/lib/socket";
 import "../global.css";
 
 export default function RootLayout() {
   useEffect(() => {
-    socket.connect();
+    getSettings().then((s) => {
+      if (s.onlineMode && s.serverUrl) {
+        connectSocket(s.serverUrl);
+      }
+    });
     return () => {
-      socket.disconnect();
+      disconnectSocket();
     };
   }, []);
 

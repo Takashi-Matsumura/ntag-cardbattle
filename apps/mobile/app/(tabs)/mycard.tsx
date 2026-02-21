@@ -6,8 +6,7 @@ import type { Card } from "@nfc-card-battle/shared";
 import { getCharacterImageUrl, getExpProgress, getEffectiveStats } from "@nfc-card-battle/shared";
 import { initNfc, readNfcUid } from "@/lib/nfc";
 import { saveCardToken } from "@/lib/card-tokens";
-
-const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL || "http://localhost:3000";
+import { getSettings, type AppSettings } from "@/lib/settings";
 
 // ngrok無料版のブラウザ警告をスキップ
 const fetchHeaders = { "ngrok-skip-browser-warning": "true" };
@@ -16,6 +15,7 @@ export default function MyCardScreen() {
   const [nfcSupported, setNfcSupported] = useState<boolean | null>(null);
   const [cards, setCards] = useState<Card[]>([]);
   const [scanning, setScanning] = useState(false);
+  const [settings, setSettings] = useState<AppSettings>({ onlineMode: false, serverUrl: "" });
 
   useEffect(() => {
     initNfc().then(setNfcSupported);
@@ -24,14 +24,21 @@ export default function MyCardScreen() {
   // タブ表示時に毎回再取得
   useFocusEffect(
     useCallback(() => {
-      fetchCards();
+      getSettings().then((s) => {
+        setSettings(s);
+        if (s.onlineMode && s.serverUrl) {
+          fetchCards(s.serverUrl);
+        } else {
+          setCards([]);
+        }
+      });
     }, [])
   );
 
   // 登録済みカード一覧取得
-  const fetchCards = useCallback(async () => {
+  const fetchCards = useCallback(async (serverUrl: string) => {
     try {
-      const res = await fetch(`${SERVER_URL}/api/cards`, {
+      const res = await fetch(`${serverUrl}/api/cards`, {
         headers: fetchHeaders,
       });
       const data = await res.json();
@@ -43,6 +50,7 @@ export default function MyCardScreen() {
 
   // NFCスキャン → カード登録
   const scanAndRegister = async () => {
+    if (!settings.serverUrl) return;
     setScanning(true);
     try {
       const uid = await readNfcUid();
@@ -51,7 +59,7 @@ export default function MyCardScreen() {
         return;
       }
 
-      const res = await fetch(`${SERVER_URL}/api/cards`, {
+      const res = await fetch(`${settings.serverUrl}/api/cards`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...fetchHeaders },
         body: JSON.stringify({ id: uid }),
@@ -68,7 +76,7 @@ export default function MyCardScreen() {
         } else {
           Alert.alert("成功", `カード ${uid} を登録しました`);
         }
-        fetchCards();
+        fetchCards(settings.serverUrl);
       } else {
         Alert.alert("エラー", "カード登録に失敗しました");
       }
@@ -81,7 +89,7 @@ export default function MyCardScreen() {
 
   const renderCard = ({ item }: { item: Card }) => {
     const imageUrl = item.character
-      ? getCharacterImageUrl(SERVER_URL, item.character.id, "idle")
+      ? getCharacterImageUrl(settings.serverUrl, item.character.id, "idle")
       : null;
     const expProgress = getExpProgress(item.exp, item.level);
     const effectiveStats = item.character
@@ -182,6 +190,21 @@ export default function MyCardScreen() {
       </View>
     );
   };
+
+  // オフライン時のメッセージ
+  if (!settings.onlineMode) {
+    return (
+      <View className="flex-1 items-center justify-center px-6">
+        <Ionicons name="cloud-offline-outline" size={48} color="#2a2a4e" />
+        <Text className="text-gray-500 text-base mt-4 text-center">
+          オンラインモードを有効にすると{"\n"}サーバーのカード情報が表示されます
+        </Text>
+        <Text className="text-gray-600 text-xs mt-2">
+          設定タブからオンラインモードをONにしてください
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View className="flex-1 px-6 pt-4">

@@ -1,20 +1,12 @@
 import { PrismaClient } from "@prisma/client";
+import { CHARACTERS } from "@nfc-card-battle/shared";
 
 const prisma = new PrismaClient();
-
-const characters = [
-  { name: "ドラゴン", hp: 105, attack: 30, defense: 15 },
-  { name: "ナイト", hp: 100, attack: 25, defense: 30 },
-  { name: "ウィザード", hp: 80, attack: 45, defense: 10 },
-  { name: "ゴーレム", hp: 150, attack: 20, defense: 35 },
-  { name: "アサシン", hp: 80, attack: 50, defense: 5 },
-  { name: "プリースト", hp: 90, attack: 25, defense: 25 },
-];
 
 async function main() {
   console.log("シードデータを投入中...");
 
-  for (const character of characters) {
+  for (const character of CHARACTERS) {
     await prisma.character.upsert({
       where: { name: character.name },
       update: character,
@@ -22,7 +14,7 @@ async function main() {
     });
   }
 
-  console.log(`${characters.length}件のキャラクターを作成しました`);
+  console.log(`${CHARACTERS.length}件のキャラクターを作成しました`);
 }
 
 main()

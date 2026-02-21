@@ -13,6 +13,8 @@
       "infoPlist": {
         "NFCReaderUsageDescription": "NFCカードを読み取ってバトルに使用します",
         "NSCameraUsageDescription": "QRコードを読み取って対戦相手とマッチングします",
+        "NSLocalNetworkUsageDescription": "近くのプレイヤーとローカル対戦するために使用します",
+        "NSBonjourServices": ["_nfc-battle._tcp", "_nfc-battle._udp"],
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
         }

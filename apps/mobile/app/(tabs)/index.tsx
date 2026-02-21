@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { View, Text, TouchableOpacity, Alert } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { Ionicons } from "@expo/vector-icons";
-import { socket } from "@/lib/socket";
+import { getSocket } from "@/lib/socket";
+import { getSettings } from "@/lib/settings";
 
 type MatchingState = "idle" | "qr_display" | "camera_scan";
 
@@ -13,12 +14,25 @@ export default function HomeScreen() {
   const [roomCode, setRoomCode] = useState<string | null>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const roomCodeRef = useRef<string | null>(null);
+  const [onlineMode, setOnlineMode] = useState(false);
 
   useEffect(() => {
     roomCodeRef.current = roomCode;
   }, [roomCode]);
 
+  // タブフォーカス時に設定を再読み込み
+  useFocusEffect(
+    useCallback(() => {
+      getSettings().then((s) => {
+        setOnlineMode(s.onlineMode);
+      });
+    }, [])
+  );
+
   useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
     // ルーム作成完了
     const onRoomCreated = ({ roomCode: code }: { roomCode: string }) => {
       setRoomCode(code);
@@ -41,10 +55,12 @@ export default function HomeScreen() {
       socket.off("room_created", onRoomCreated);
       socket.off("opponent_joined", onOpponentJoined);
     };
-  }, []);
+  }, [onlineMode]);
 
   // 対戦ボタン → ルーム作成 + QR表示
   const startMatching = () => {
+    const socket = getSocket();
+    if (!socket) return;
     setRoomCode(null);
     socket.emit("create_room");
   };
@@ -63,6 +79,8 @@ export default function HomeScreen() {
 
   // QRコード読み取り
   const onBarcodeScanned = ({ data }: { data: string }) => {
+    const socket = getSocket();
+    if (!socket) return;
     setMatchingState("idle");
 
     // nfc-battle://join/{roomCode} 形式をパース
@@ -79,7 +97,10 @@ export default function HomeScreen() {
   // キャンセル → アイドルに戻る
   const cancelMatching = () => {
     if (roomCode) {
-      socket.emit("leave_room");
+      const socket = getSocket();
+      if (socket) {
+        socket.emit("leave_room");
+      }
     }
     setMatchingState("idle");
     setRoomCode(null);
@@ -143,14 +164,27 @@ export default function HomeScreen() {
 
       {matchingState === "idle" ? (
         <>
-          {/* 対戦ボタン */}
+          {/* オンライン対戦ボタン（オンラインモードON時のみ） */}
+          {onlineMode && (
+            <TouchableOpacity
+              onPress={startMatching}
+              className="bg-[#6c5ce7] w-full py-4 rounded-2xl mb-3 flex-row items-center justify-center"
+            >
+              <Ionicons name="people-outline" size={22} color="#fff" />
+              <Text className="text-white font-bold text-base ml-2">
+                対戦
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {/* ローカル対戦ボタン */}
           <TouchableOpacity
-            onPress={startMatching}
-            className="bg-[#6c5ce7] w-full py-4 rounded-2xl mb-3 flex-row items-center justify-center"
+            onPress={() => router.push("/battle/local")}
+            className="bg-[#1a1a2e] w-full py-4 rounded-2xl mb-3 border border-[#6c5ce7] flex-row items-center justify-center"
           >
-            <Ionicons name="people-outline" size={22} color="#fff" />
-            <Text className="text-white font-bold text-base ml-2">
-              対戦
+            <Ionicons name="bluetooth" size={22} color="#6c5ce7" />
+            <Text className="text-[#6c5ce7] font-bold text-base ml-2">
+              ローカル対戦
             </Text>
           </TouchableOpacity>
         </>

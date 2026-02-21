@@ -1,12 +1,12 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { View, Text, TouchableOpacity, Alert, Animated } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import type { NfcCardData } from "@nfc-card-battle/shared";
 import { readNfcUid, writeNfcData } from "@/lib/nfc";
-import { getCardToken } from "@/lib/card-tokens";
-import { SocketTransport } from "@/lib/socket-transport";
 import { useBattle } from "@/hooks/useBattle";
+import { P2PHostTransport } from "@/lib/p2p-host-transport";
+import { P2PGuestTransport } from "@/lib/p2p-guest-transport";
+import { getLocalCard, saveLocalCard } from "@/lib/local-cards";
 import { BattleCard } from "@/components/BattleCard";
 import { ActionCardController } from "@/components/ActionCardController";
 
@@ -22,10 +22,17 @@ const getTip = (isMyAttack: boolean, turn: number): string => {
   }
 };
 
-export default function BattleScreen() {
-  const { roomId } = useLocalSearchParams<{ roomId: string }>();
+export default function P2PBattleScreen() {
+  const { role } = useLocalSearchParams<{ role: "host" | "guest" }>();
   const router = useRouter();
-  const transport = useMemo(() => new SocketTransport(), []);
+
+  const transport = useMemo(() => {
+    const name = `P2P_${Date.now()}`;
+    if (role === "host") {
+      return new P2PHostTransport(name);
+    }
+    return new P2PGuestTransport(name);
+  }, [role]);
 
   const {
     phase,
@@ -56,9 +63,10 @@ export default function BattleScreen() {
 
   const [scanning, setScanning] = useState(false);
   const [nfcWritePhase, setNfcWritePhase] = useState<"idle" | "writing" | "success" | "failed">("idle");
+  const [scannedUid, setScannedUid] = useState<string | null>(null);
 
-  // NFCスキャン
-  const scanCard = async () => {
+  // NFCスキャン → ローカルカードデータでP2P登録
+  const scanCard = useCallback(async () => {
     setScanning(true);
     try {
       const uid = await readNfcUid();
@@ -67,25 +75,50 @@ export default function BattleScreen() {
         setScanning(false);
         return;
       }
-      const token = await getCardToken(uid);
-      if (!token) {
-        Alert.alert("エラー", "カードのトークンが見つかりません。マイカード画面で再登録してください");
+
+      const localCard = await getLocalCard(uid);
+      if (!localCard) {
+        Alert.alert(
+          "未登録カード",
+          "このカードは登録されていません。\n設定画面の「カード登録（ガチャ）」で先にカードを登録してください。"
+        );
         setScanning(false);
         return;
       }
-      transport.registerCard(uid, token);
+
+      setScannedUid(uid);
+
+      // P2Pトランスポートにカード登録
+      if (transport instanceof P2PHostTransport) {
+        transport.registerLocalCard(localCard);
+      } else if (transport instanceof P2PGuestTransport) {
+        (transport as P2PGuestTransport).registerLocalCard(localCard);
+      }
     } catch {
       Alert.alert("エラー", "スキャンに失敗しました");
     } finally {
       setScanning(false);
     }
-  };
+  }, [transport]);
 
-  // キャンセル（scan/waitingフェーズ）
+  // キャンセル
   const cancelBattle = () => {
     transport.leaveRoom();
     router.back();
   };
+
+  // バトル終了後のローカルデータ保存
+  const saveResult = useCallback(async () => {
+    if (!scannedUid || !cardStats || !myRole) return;
+    await saveLocalCard({
+      cardUid: scannedUid,
+      characterId: myCard?.id ?? 1,
+      level: cardStats.level,
+      exp: cardStats.exp,
+      totalWins: cardStats.totalWins,
+      totalLosses: cardStats.totalLosses,
+    });
+  }, [scannedUid, cardStats, myRole, myCard]);
 
   // NFC書き込み
   const handleNfcWrite = async () => {
@@ -99,6 +132,7 @@ export default function BattleScreen() {
       losses: cardStats.totalLosses,
     });
     setNfcWritePhase(success ? "success" : "failed");
+    if (success) await saveResult();
   };
 
   // ========== Scan Phase ==========
@@ -106,9 +140,9 @@ export default function BattleScreen() {
     return (
       <View className="flex-1 items-center justify-center px-6">
         <View className="bg-[#1a1a2e] rounded-3xl p-8 items-center w-full border border-[#2a2a4e]">
-          <Ionicons name="shield-half-outline" size={56} color="#6c5ce7" />
+          <Ionicons name="bluetooth" size={56} color="#6c5ce7" />
           <Text className="text-white text-2xl font-bold mt-4">
-            対戦バトル
+            ローカル対戦
           </Text>
           <Text className="text-gray-400 text-center mt-3 leading-5">
             カードをスキャンして{"\n"}
@@ -150,7 +184,6 @@ export default function BattleScreen() {
       <View className="flex-1 items-center justify-center px-6">
         <Text className="text-gray-400 text-sm mb-4">対戦カード</Text>
         <View className="flex-row items-center w-full gap-3">
-          {/* 自分のカード */}
           <View className="flex-1">
             {myCard ? (
               <BattleCard
@@ -167,7 +200,6 @@ export default function BattleScreen() {
             )}
           </View>
           <Text className="text-gray-600 font-bold text-lg">VS</Text>
-          {/* 相手のカード */}
           <View className="flex-1">
             {opponentCard ? (
               <BattleCard
@@ -205,6 +237,10 @@ export default function BattleScreen() {
   // ========== Finished Phase ==========
   if (phase === "finished") {
     const isWin = winner === myRole;
+    // 画面表示時にローカルデータを保存
+    if (cardStats && scannedUid) {
+      saveResult();
+    }
     return (
       <View className="flex-1 items-center justify-center px-6">
         <View className="bg-[#1a1a2e] rounded-3xl p-8 items-center w-full border border-[#2a2a4e]">
@@ -235,14 +271,12 @@ export default function BattleScreen() {
                   +{expGained} EXP
                 </Text>
               </View>
-              {/* EXPバー */}
               <View className="w-full h-3 bg-[#0f0f1a] rounded-full overflow-hidden">
                 <View
                   className="h-full bg-[#6c5ce7] rounded-full"
                   style={{ width: `${Math.min(expProgress * 100, 100)}%` }}
                 />
               </View>
-              {/* レベルアップ表示 */}
               {leveledUp && (
                 <View className="flex-row items-center justify-center mt-3 bg-[#6c5ce7]/10 py-2 rounded-xl">
                   <Ionicons name="star" size={18} color="#6c5ce7" />
@@ -349,7 +383,7 @@ export default function BattleScreen() {
         </View>
       </View>
 
-      {/* ===== 上部: 相手カード（右寄せ） ===== */}
+      {/* ===== 上部: 相手カード ===== */}
       {opponentCard && (
         <View className="px-4 pt-1 items-end">
           <View className="w-1/2">
@@ -364,10 +398,9 @@ export default function BattleScreen() {
         </View>
       )}
 
-      {/* ===== 中央: バトルフィールド（オーバーレイ） ===== */}
+      {/* ===== 中央: バトルフィールド ===== */}
       <View className="flex-1 px-6 justify-center items-center" style={{ zIndex: 10 }} pointerEvents="none">
         {showResult && resultData ? (
-          // === 結果表示 ===
           <Animated.View
             className="items-center w-full"
             style={{
@@ -375,12 +408,10 @@ export default function BattleScreen() {
               transform: [{ translateX: shakeAnim }],
             }}
           >
-            {/* ヘッダー */}
             <Text className="text-gray-400 text-lg font-bold mb-2">
               {resultData.header}
             </Text>
 
-            {/* ダメージ数値 */}
             {resultData.damage > 0 ? (
               <View className="items-center my-2">
                 <Animated.View
@@ -435,7 +466,6 @@ export default function BattleScreen() {
               </View>
             )}
 
-            {/* 説明テキスト */}
             <View
               className={`px-5 py-2.5 rounded-full mt-1 ${
                 resultData.type === "counter_ok" || resultData.type === "perfect"
@@ -467,7 +497,6 @@ export default function BattleScreen() {
             </View>
           </Animated.View>
         ) : actionSelected ? (
-          // === アクション処理中 ===
           <View className="items-center">
             <Animated.View
               style={{
@@ -488,7 +517,6 @@ export default function BattleScreen() {
             </Text>
           </View>
         ) : (
-          // === ターン開始表示 ===
           <Animated.View
             className="items-center"
             style={{ opacity: fieldAnim }}

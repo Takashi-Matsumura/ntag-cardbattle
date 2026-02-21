@@ -2,12 +2,17 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { View, Text, TouchableOpacity, Animated, Alert } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import type { Character, CharacterImageType } from "@nfc-card-battle/shared";
+import type {
+  Character,
+  CharacterImageType,
+  TurnResult,
+  ResultType,
+  ActionType,
+} from "@nfc-card-battle/shared";
 import {
-  MIN_DAMAGE,
-  DEFENSE_MULTIPLIER,
   TURN_TIME_LIMIT,
-  varyDamage,
+  resolveTurnBased,
+  type Player,
 } from "@nfc-card-battle/shared";
 import { readNfcUid } from "@/lib/nfc";
 import { BattleCard } from "@/components/BattleCard";
@@ -16,16 +21,131 @@ import { ActionCardController } from "@/components/ActionCardController";
 const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL || "http://localhost:3000";
 const fetchHeaders = { "ngrok-skip-browser-warning": "true" };
 
-// バトル定数
-const SPECIAL_COOLDOWN = 3;
-const SPECIAL_MULTIPLIER = 1.8;
-const COUNTER_SUCCESS_RATE = 0.3;
-const COUNTER_DAMAGE_MULTIPLIER = 1.5;
-
 type Phase = "scan" | "intro" | "battle" | "finished";
-type TurnType = "player_attack" | "cpu_attack";
+type TutorialTurn = "player_attack" | "cpu_attack";
 
-const getTip = (turnType: TurnType, turn: number): string => {
+interface TutorialResultData {
+  header: string;
+  damage: number;
+  label: string;
+  description: string;
+  type: ResultType;
+}
+
+// TurnResultからチュートリアル用の表示データを構築
+function buildTutorialResult(
+  result: TurnResult,
+  isPlayerAttacker: boolean,
+  playerName: string,
+  cpuName: string
+): TutorialResultData {
+  const { resultType, damageToDefender, damageToAttacker, attackerAction } = result;
+  const isSpecial = attackerAction === "special";
+
+  if (isPlayerAttacker) {
+    switch (resultType) {
+      case "defend":
+        return {
+          header: isSpecial ? `${playerName}の必殺技！` : `${playerName}の攻撃！`,
+          damage: damageToDefender,
+          label: "BLOCKED",
+          description: `${cpuName}が防御！ダメージ軽減！`,
+          type: "defend",
+        };
+      case "perfect":
+        return {
+          header: isSpecial ? `${playerName}の必殺技！` : `${playerName}の攻撃！`,
+          damage: 0,
+          label: "PERFECT",
+          description: `${cpuName}が完全防御！`,
+          type: "perfect",
+        };
+      case "penalty":
+        return {
+          header: "時間切れ！隙を突かれた！",
+          damage: damageToAttacker,
+          label: "PENALTY",
+          description: `${cpuName}の反撃で${damageToAttacker}ダメージ！`,
+          type: "penalty",
+        };
+      case "no_guard":
+        return {
+          header: isSpecial ? `${playerName}の必殺技！` : `${playerName}の攻撃！`,
+          damage: damageToDefender,
+          label: "NO GUARD",
+          description: `${cpuName}が時間切れ！${damageToDefender}ダメージ！`,
+          type: "no_guard",
+        };
+      default:
+        return {
+          header: `${playerName}の攻撃！`,
+          damage: damageToDefender,
+          label: "DAMAGE",
+          description: `${cpuName}に${damageToDefender}ダメージ！`,
+          type: "deal",
+        };
+    }
+  } else {
+    switch (resultType) {
+      case "defend":
+        return {
+          header: isSpecial ? `${cpuName}の必殺技！` : `${cpuName}の攻撃！`,
+          damage: damageToDefender,
+          label: "BLOCKED",
+          description: "防御成功！ダメージ軽減！",
+          type: "defend",
+        };
+      case "perfect":
+        return {
+          header: isSpecial ? `${cpuName}の必殺技！` : `${cpuName}の攻撃！`,
+          damage: 0,
+          label: "PERFECT",
+          description: "完全防御！ダメージを防いだ！",
+          type: "perfect",
+        };
+      case "counter_ok":
+        return {
+          header: isSpecial ? `${cpuName}の必殺技！` : `${cpuName}の攻撃！`,
+          damage: damageToAttacker,
+          label: "COUNTER",
+          description: "カウンター成功！反撃ダメージ！",
+          type: "counter_ok",
+        };
+      case "counter_fail":
+        return {
+          header: isSpecial ? `${cpuName}の必殺技！` : `${cpuName}の攻撃！`,
+          damage: damageToDefender,
+          label: "DAMAGE",
+          description: "カウンター失敗！無防備にダメージ！",
+          type: "counter_fail",
+        };
+      case "no_guard":
+        return {
+          header: "時間切れ！" + (isSpecial ? `${cpuName}の必殺技！` : `${cpuName}の攻撃！`),
+          damage: damageToDefender,
+          label: "NO GUARD",
+          description: `防御なし！${damageToDefender}ダメージ！`,
+          type: "no_guard",
+        };
+      default:
+        return {
+          header: `${cpuName}の攻撃！`,
+          damage: damageToDefender,
+          label: "DAMAGE",
+          description: `${damageToDefender}ダメージ受けた！`,
+          type: "deal",
+        };
+    }
+  }
+}
+
+// CPUの攻撃アクション選択（30%の確率で必殺技）
+function pickCpuAttackAction(cpuSpecialCd: number): ActionType {
+  if (cpuSpecialCd <= 0 && Math.random() < 0.3) return "special";
+  return "attack";
+}
+
+const getTip = (turnType: TutorialTurn, turn: number): string => {
   if (turnType === "player_attack") {
     if (turn <= 1) return "「攻撃」か「必殺技」を選びましょう";
     if (turn <= 3) return "必殺技は威力が高いがクールダウンあり";
@@ -47,7 +167,7 @@ export default function TutorialScreen() {
   const [myHp, setMyHp] = useState(0);
   const [cpuHp, setCpuHp] = useState(0);
   const [turn, setTurn] = useState(0);
-  const [turnType, setTurnType] = useState<TurnType>("player_attack");
+  const [turnType, setTurnType] = useState<TutorialTurn>("player_attack");
   const [timer, setTimer] = useState(TURN_TIME_LIMIT);
   const [actionSelected, setActionSelected] = useState(false);
   const [playerSpecialCd, setPlayerSpecialCd] = useState(0);
@@ -56,15 +176,7 @@ export default function TutorialScreen() {
   const [winner, setWinner] = useState<"player" | "cpu" | null>(null);
   const [playerImageType, setPlayerImageType] = useState<CharacterImageType>("idle");
   const [cpuImageType, setCpuImageType] = useState<CharacterImageType>("idle");
-
-  // 構造化された結果データ
-  const [resultData, setResultData] = useState<{
-    header: string;
-    damage: number;
-    label: string;
-    description: string;
-    type: "deal" | "take" | "counter_ok" | "counter_fail" | "defend" | "perfect" | "penalty" | "no_guard";
-  } | null>(null);
+  const [resultData, setResultData] = useState<TutorialResultData | null>(null);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const damageAnim = useRef(new Animated.Value(0)).current;
@@ -124,7 +236,7 @@ export default function TutorialScreen() {
   };
 
   // --- ターン開始 ---
-  const startTurn = useCallback((type: TurnType) => {
+  const startTurn = useCallback((type: TutorialTurn) => {
     setTurn((t) => t + 1);
     setTurnType(type);
     setTimer(TURN_TIME_LIMIT);
@@ -133,12 +245,6 @@ export default function TutorialScreen() {
     setResultData(null);
     setPlayerImageType("idle");
     setCpuImageType("idle");
-
-    if (type === "player_attack") {
-      setPlayerSpecialCd((cd) => Math.max(cd - 1, 0));
-    } else {
-      setCpuSpecialCd((cd) => Math.max(cd - 1, 0));
-    }
 
     // フィールドアニメーション
     fieldAnim.setValue(0);
@@ -160,24 +266,17 @@ export default function TutorialScreen() {
     }, 1000);
   }, []);
 
-  // --- 攻撃タイムアウト ---
-  const handleAttackTimeout = () => {
-    if (actionSelected || !playerChar || !cpuChar) return;
-    setActionSelected(true);
-    if (timerRef.current) clearInterval(timerRef.current);
+  // ターン結果を処理してアニメーション表示（Player=A, CPU=B）
+  const applyTurnResult = (
+    result: TurnResult,
+    isPlayerAttacker: boolean,
+    immediatePlayerImg: CharacterImageType,
+    immediateCpuImg: CharacterImageType,
+  ) => {
+    if (!playerChar || !cpuChar) return;
 
-    setPlayerImageType("damaged");
-    setCpuImageType("attack");
-
-    const penaltyDmg = varyDamage(cpuChar.attack);
-
-    const result = {
-      header: "時間切れ！隙を突かれた！",
-      damage: penaltyDmg,
-      label: "PENALTY",
-      description: `${cpuChar.name}の反撃で${penaltyDmg}ダメージ！`,
-      type: "penalty" as const,
-    };
+    setPlayerImageType(immediatePlayerImg);
+    setCpuImageType(immediateCpuImg);
 
     damageAnim.setValue(0);
     Animated.timing(damageAnim, {
@@ -187,9 +286,34 @@ export default function TutorialScreen() {
     }).start();
 
     setTimeout(() => {
-      setResultData(result);
+      const rd = buildTutorialResult(result, isPlayerAttacker, playerChar.name, cpuChar.name);
+      setResultData(rd);
       setShowResult(true);
 
+      // 結果に基づいて画像更新
+      if (isPlayerAttacker) {
+        if (result.resultType === "penalty") {
+          setPlayerImageType("damaged");
+          setCpuImageType("attack");
+        } else if (result.resultType === "perfect") {
+          setCpuImageType("defend");
+        } else if (result.damageToDefender > 0) {
+          setCpuImageType("damaged");
+        }
+      } else {
+        if (result.resultType === "counter_ok") {
+          setPlayerImageType("attack");
+          setCpuImageType("damaged");
+        } else if (result.resultType === "perfect") {
+          setPlayerImageType("defend");
+        } else if (result.resultType === "counter_fail" || result.resultType === "no_guard") {
+          setPlayerImageType("damaged");
+        } else if (result.resultType === "defend") {
+          setPlayerImageType(result.damageToDefender > 0 ? "damaged" : "defend");
+        }
+      }
+
+      // 数値バウンスアニメーション
       numberAnim.setValue(0);
       Animated.sequence([
         Animated.timing(numberAnim, {
@@ -205,30 +329,55 @@ export default function TutorialScreen() {
         }),
       ]).start();
 
-      // シェイクアニメーション
-      shakeAnim.setValue(0);
-      Animated.sequence([
-        Animated.timing(shakeAnim, { toValue: 10, duration: 50, useNativeDriver: true }),
-        Animated.timing(shakeAnim, { toValue: -10, duration: 50, useNativeDriver: true }),
-        Animated.timing(shakeAnim, { toValue: 8, duration: 50, useNativeDriver: true }),
-        Animated.timing(shakeAnim, { toValue: -8, duration: 50, useNativeDriver: true }),
-        Animated.timing(shakeAnim, { toValue: 4, duration: 50, useNativeDriver: true }),
-        Animated.timing(shakeAnim, { toValue: 0, duration: 50, useNativeDriver: true }),
-      ]).start();
+      // プレイヤーがダメージを受けた場合のシェイク
+      const playerTookDamage = isPlayerAttacker
+        ? result.damageToAttacker > 0
+        : result.damageToDefender > 0;
+      if (playerTookDamage) {
+        shakeAnim.setValue(0);
+        Animated.sequence([
+          Animated.timing(shakeAnim, { toValue: 10, duration: 50, useNativeDriver: true }),
+          Animated.timing(shakeAnim, { toValue: -10, duration: 50, useNativeDriver: true }),
+          Animated.timing(shakeAnim, { toValue: 8, duration: 50, useNativeDriver: true }),
+          Animated.timing(shakeAnim, { toValue: -8, duration: 50, useNativeDriver: true }),
+          Animated.timing(shakeAnim, { toValue: 4, duration: 50, useNativeDriver: true }),
+          Animated.timing(shakeAnim, { toValue: 0, duration: 50, useNativeDriver: true }),
+        ]).start();
+      }
 
-      const newMyHp = Math.max(myHp - penaltyDmg, 0);
+      // HP・クールダウン更新
+      const newMyHp = result.playerA.hpAfter;
+      const newCpuHp = result.playerB.hpAfter;
       setMyHp(newMyHp);
+      setCpuHp(newCpuHp);
+      setPlayerSpecialCd(result.playerA.specialCd);
+      setCpuSpecialCd(result.playerB.specialCd);
 
-      if (newMyHp <= 0) {
+      if (newMyHp <= 0 || newCpuHp <= 0) {
         setTimeout(() => {
-          setWinner("cpu");
+          setWinner(newCpuHp <= 0 ? "player" : "cpu");
           setPhase("finished");
         }, 1500);
       } else {
-        // タイムアウト後はCPUの攻撃ターンへ
-        setTimeout(() => startTurn("cpu_attack"), 2000);
+        const nextTurn: TutorialTurn = isPlayerAttacker ? "cpu_attack" : "player_attack";
+        setTimeout(() => startTurn(nextTurn), 2000);
       }
     }, 600);
+  };
+
+  // --- 攻撃タイムアウト ---
+  const handleAttackTimeout = () => {
+    if (actionSelected || !playerChar || !cpuChar) return;
+    setActionSelected(true);
+    if (timerRef.current) clearInterval(timerRef.current);
+
+    const result = resolveTurnBased(
+      turn, "A_attacks",
+      { hp: myHp, attack: playerChar.attack, defense: playerChar.defense, specialCd: playerSpecialCd },
+      { hp: cpuHp, attack: cpuChar.attack, defense: cpuChar.defense, specialCd: cpuSpecialCd },
+      "timeout", "defend"
+    );
+    applyTurnResult(result, true, "damaged", "attack");
   };
 
   // --- 防御タイムアウト ---
@@ -237,84 +386,14 @@ export default function TutorialScreen() {
     setActionSelected(true);
     if (timerRef.current) clearInterval(timerRef.current);
 
-    const cpuCanSpecial = cpuSpecialCd <= 0;
-    const cpuUsesSpecial = cpuCanSpecial && Math.random() < 0.3;
-    const cpuAtkPower = cpuUsesSpecial
-      ? Math.floor(cpuChar.attack * SPECIAL_MULTIPLIER)
-      : cpuChar.attack;
-
-    if (cpuUsesSpecial) {
-      setCpuSpecialCd(SPECIAL_COOLDOWN);
-    }
-
-    setPlayerImageType("damaged");
-    setCpuImageType(cpuUsesSpecial ? "special" : "attack");
-
-    // 防御力無視のフルダメージ
-    const dmgToPlayer = varyDamage(cpuAtkPower);
-
-    const cpuHeader = cpuUsesSpecial
-      ? `${cpuChar.name}の必殺技！`
-      : `${cpuChar.name}の攻撃！`;
-
-    const result = {
-      header: "時間切れ！" + cpuHeader,
-      damage: dmgToPlayer,
-      label: "NO GUARD",
-      description: `防御なし！${dmgToPlayer}ダメージ！`,
-      type: "no_guard" as const,
-    };
-
-    damageAnim.setValue(0);
-    Animated.timing(damageAnim, {
-      toValue: 1,
-      duration: 500,
-      useNativeDriver: true,
-    }).start();
-
-    setTimeout(() => {
-      setResultData(result);
-      setShowResult(true);
-
-      numberAnim.setValue(0);
-      Animated.sequence([
-        Animated.timing(numberAnim, {
-          toValue: 1.4,
-          duration: 150,
-          useNativeDriver: true,
-        }),
-        Animated.spring(numberAnim, {
-          toValue: 1,
-          friction: 4,
-          tension: 120,
-          useNativeDriver: true,
-        }),
-      ]).start();
-
-      // シェイクアニメーション
-      shakeAnim.setValue(0);
-      Animated.sequence([
-        Animated.timing(shakeAnim, { toValue: 10, duration: 50, useNativeDriver: true }),
-        Animated.timing(shakeAnim, { toValue: -10, duration: 50, useNativeDriver: true }),
-        Animated.timing(shakeAnim, { toValue: 8, duration: 50, useNativeDriver: true }),
-        Animated.timing(shakeAnim, { toValue: -8, duration: 50, useNativeDriver: true }),
-        Animated.timing(shakeAnim, { toValue: 4, duration: 50, useNativeDriver: true }),
-        Animated.timing(shakeAnim, { toValue: 0, duration: 50, useNativeDriver: true }),
-      ]).start();
-
-      const newMyHp = Math.max(myHp - dmgToPlayer, 0);
-      setMyHp(newMyHp);
-
-      if (newMyHp <= 0) {
-        setTimeout(() => {
-          setWinner("cpu");
-          setPhase("finished");
-        }, 1500);
-      } else {
-        // 防御タイムアウト後はプレイヤーの攻撃ターンへ
-        setTimeout(() => startTurn("player_attack"), 2000);
-      }
-    }, 600);
+    const cpuAction = pickCpuAttackAction(cpuSpecialCd);
+    const result = resolveTurnBased(
+      turn, "B_attacks",
+      { hp: cpuHp, attack: cpuChar.attack, defense: cpuChar.defense, specialCd: cpuSpecialCd },
+      { hp: myHp, attack: playerChar.attack, defense: playerChar.defense, specialCd: playerSpecialCd },
+      cpuAction, "timeout"
+    );
+    applyTurnResult(result, false, "damaged", cpuAction === "special" ? "special" : "attack");
   };
 
   // --- タイムアウト ---
@@ -334,68 +413,13 @@ export default function TutorialScreen() {
     setActionSelected(true);
     if (timerRef.current) clearInterval(timerRef.current);
 
-    const isSpecial = action === "special";
-    setPlayerImageType(isSpecial ? "special" : "attack");
-    const atkPower = isSpecial
-      ? Math.floor(playerChar.attack * SPECIAL_MULTIPLIER)
-      : playerChar.attack;
-    const dmg = varyDamage(Math.max(atkPower - cpuChar.defense, MIN_DAMAGE));
-
-    if (isSpecial) {
-      setPlayerSpecialCd(SPECIAL_COOLDOWN);
-    }
-
-    const result = {
-      header: isSpecial
-        ? `${playerChar.name}の必殺技！`
-        : `${playerChar.name}の攻撃！`,
-      damage: dmg,
-      label: "DAMAGE",
-      description: `${cpuChar.name}に${dmg}ダメージ！`,
-      type: isSpecial ? ("deal" as const) : ("deal" as const),
-    };
-
-    // 処理中アニメーション
-    damageAnim.setValue(0);
-    Animated.timing(damageAnim, {
-      toValue: 1,
-      duration: 500,
-      useNativeDriver: true,
-    }).start();
-
-    setTimeout(() => {
-      setResultData(result);
-      setShowResult(true);
-      setCpuImageType("damaged");
-
-      // 数値バウンスアニメーション
-      numberAnim.setValue(0);
-      Animated.sequence([
-        Animated.timing(numberAnim, {
-          toValue: 1.4,
-          duration: 150,
-          useNativeDriver: true,
-        }),
-        Animated.spring(numberAnim, {
-          toValue: 1,
-          friction: 4,
-          tension: 120,
-          useNativeDriver: true,
-        }),
-      ]).start();
-
-      const newCpuHp = Math.max(cpuHp - dmg, 0);
-      setCpuHp(newCpuHp);
-
-      if (newCpuHp <= 0) {
-        setTimeout(() => {
-          setWinner("player");
-          setPhase("finished");
-        }, 1500);
-      } else {
-        setTimeout(() => startTurn("cpu_attack"), 2000);
-      }
-    }, 600);
+    const result = resolveTurnBased(
+      turn, "A_attacks",
+      { hp: myHp, attack: playerChar.attack, defense: playerChar.defense, specialCd: playerSpecialCd },
+      { hp: cpuHp, attack: cpuChar.attack, defense: cpuChar.defense, specialCd: cpuSpecialCd },
+      action, "defend"
+    );
+    applyTurnResult(result, true, action === "special" ? "special" : "attack", "idle");
   };
 
   // --- 相手の攻撃ターン ---
@@ -404,135 +428,14 @@ export default function TutorialScreen() {
     setActionSelected(true);
     if (timerRef.current) clearInterval(timerRef.current);
 
-    const cpuCanSpecial = cpuSpecialCd <= 0;
-    const cpuUsesSpecial = cpuCanSpecial && Math.random() < 0.3;
-    const cpuAtkPower = cpuUsesSpecial
-      ? Math.floor(cpuChar.attack * SPECIAL_MULTIPLIER)
-      : cpuChar.attack;
-
-    if (cpuUsesSpecial) {
-      setCpuSpecialCd(SPECIAL_COOLDOWN);
-    }
-
-    setCpuImageType(cpuUsesSpecial ? "special" : "attack");
-
-    let dmgToPlayer = 0;
-    let dmgToCpu = 0;
-    const cpuHeader = cpuUsesSpecial
-      ? `${cpuChar.name}の必殺技！`
-      : `${cpuChar.name}の攻撃！`;
-
-    let result: typeof resultData;
-    let playerImgAfter: CharacterImageType = "defend";
-    let cpuImgAfter: CharacterImageType = cpuUsesSpecial ? "special" : "attack";
-
-    if (action === "counter") {
-      const success = Math.random() < COUNTER_SUCCESS_RATE;
-      if (success) {
-        dmgToCpu = varyDamage(Math.floor(playerChar.attack * COUNTER_DAMAGE_MULTIPLIER));
-        result = {
-          header: cpuHeader,
-          damage: dmgToCpu,
-          label: "COUNTER",
-          description: "カウンター成功！反撃ダメージ！",
-          type: "counter_ok",
-        };
-        playerImgAfter = "attack";
-        cpuImgAfter = "damaged";
-      } else {
-        // カウンター失敗: 防御力無視のフルダメージ
-        dmgToPlayer = varyDamage(cpuAtkPower);
-        result = {
-          header: cpuHeader,
-          damage: dmgToPlayer,
-          label: "DAMAGE",
-          description: "カウンター失敗！無防備にダメージ！",
-          type: "counter_fail",
-        };
-        playerImgAfter = "damaged";
-      }
-    } else {
-      dmgToPlayer = varyDamage(Math.max(
-        cpuAtkPower - playerChar.defense * DEFENSE_MULTIPLIER,
-        0
-      ));
-      if (dmgToPlayer > 0) {
-        result = {
-          header: cpuHeader,
-          damage: dmgToPlayer,
-          label: "BLOCKED",
-          description: "防御成功！ダメージ軽減！",
-          type: "defend",
-        };
-        playerImgAfter = "defend";
-      } else {
-        result = {
-          header: cpuHeader,
-          damage: 0,
-          label: "PERFECT",
-          description: "完全防御！ダメージを防いだ！",
-          type: "perfect",
-        };
-        playerImgAfter = "defend";
-      }
-    }
-
-    damageAnim.setValue(0);
-    Animated.timing(damageAnim, {
-      toValue: 1,
-      duration: 500,
-      useNativeDriver: true,
-    }).start();
-
-    setTimeout(() => {
-      setResultData(result);
-      setShowResult(true);
-      setPlayerImageType(playerImgAfter);
-      setCpuImageType(cpuImgAfter);
-
-      // 数値バウンスアニメーション
-      numberAnim.setValue(0);
-      Animated.sequence([
-        Animated.timing(numberAnim, {
-          toValue: 1.4,
-          duration: 150,
-          useNativeDriver: true,
-        }),
-        Animated.spring(numberAnim, {
-          toValue: 1,
-          friction: 4,
-          tension: 120,
-          useNativeDriver: true,
-        }),
-      ]).start();
-
-      // ダメージを受けた時のシェイクアニメーション
-      if (dmgToPlayer > 0) {
-        shakeAnim.setValue(0);
-        Animated.sequence([
-          Animated.timing(shakeAnim, { toValue: 10, duration: 50, useNativeDriver: true }),
-          Animated.timing(shakeAnim, { toValue: -10, duration: 50, useNativeDriver: true }),
-          Animated.timing(shakeAnim, { toValue: 8, duration: 50, useNativeDriver: true }),
-          Animated.timing(shakeAnim, { toValue: -8, duration: 50, useNativeDriver: true }),
-          Animated.timing(shakeAnim, { toValue: 4, duration: 50, useNativeDriver: true }),
-          Animated.timing(shakeAnim, { toValue: 0, duration: 50, useNativeDriver: true }),
-        ]).start();
-      }
-
-      const newMyHp = Math.max(myHp - dmgToPlayer, 0);
-      const newCpuHp = Math.max(cpuHp - dmgToCpu, 0);
-      setMyHp(newMyHp);
-      setCpuHp(newCpuHp);
-
-      if (newMyHp <= 0 || newCpuHp <= 0) {
-        setTimeout(() => {
-          setWinner(newCpuHp <= 0 ? "player" : "cpu");
-          setPhase("finished");
-        }, 1500);
-      } else {
-        setTimeout(() => startTurn("player_attack"), 2000);
-      }
-    }, 600);
+    const cpuAction = pickCpuAttackAction(cpuSpecialCd);
+    const result = resolveTurnBased(
+      turn, "B_attacks",
+      { hp: cpuHp, attack: cpuChar.attack, defense: cpuChar.defense, specialCd: cpuSpecialCd },
+      { hp: myHp, attack: playerChar.attack, defense: playerChar.defense, specialCd: playerSpecialCd },
+      cpuAction, action
+    );
+    applyTurnResult(result, false, "idle", cpuAction === "special" ? "special" : "attack");
   };
 
   useEffect(() => {

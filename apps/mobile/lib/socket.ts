@@ -4,13 +4,30 @@ import type {
   ServerToClientEvents,
 } from "@nfc-card-battle/shared";
 
-// 開発時はローカルサーバに接続
-const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL || "http://localhost:3000";
+let socket: Socket<ServerToClientEvents, ClientToServerEvents> | null = null;
 
-export const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io(
-  SERVER_URL,
-  {
+// 現在のSocketインスタンスを取得（未接続時はnull）
+export function getSocket(): Socket<ServerToClientEvents, ClientToServerEvents> | null {
+  return socket;
+}
+
+// 指定URLでSocket接続を作成・開始
+export function connectSocket(serverUrl: string): Socket<ServerToClientEvents, ClientToServerEvents> {
+  if (socket) {
+    socket.disconnect();
+  }
+  socket = io(serverUrl, {
     autoConnect: false,
     transports: ["websocket"],
+  });
+  socket.connect();
+  return socket;
+}
+
+// Socket接続を切断
+export function disconnectSocket(): void {
+  if (socket) {
+    socket.disconnect();
+    socket = null;
   }
-);
+}
