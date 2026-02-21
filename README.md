@@ -201,6 +201,56 @@ pnpm build:server       # サーバビルド
   - プリースト: ATK 15→25（勝率14%→46%に改善）
   - 調整後、全キャラの総合勝率が46〜63%の範囲に収束
 
+## 音源素材のセットアップ
+
+バトル中のBGM・効果音にフリー素材を使用しています。利用規約により素材ファイルはリポジトリに含まれていないため、各自でダウンロードして配置してください。
+
+### ダウンロード元
+
+| ファイル名 | 用途 | ダウンロード元 |
+|-----------|------|---------------|
+| `bgm-battle.mp3` | バトルBGM（ループ） | [魔王魂](https://maou.audio/) |
+| `se-attack.mp3` | 通常攻撃ヒット | [効果音ラボ](https://soundeffect-lab.info/) |
+| `se-special.mp3` | 必殺技ヒット | [効果音ラボ](https://soundeffect-lab.info/) |
+| `se-defense.mp3` | 防御（ブロック） | [効果音ラボ](https://soundeffect-lab.info/) |
+| `se-counter-ok.mp3` | カウンター成功 | [効果音ラボ](https://soundeffect-lab.info/) |
+| `se-counter-fail.mp3` | カウンター失敗 | [効果音ラボ](https://soundeffect-lab.info/) |
+| `se-damage.mp3` | 被ダメージ | [効果音ラボ](https://soundeffect-lab.info/) |
+| `se-victory.mp3` | 勝利ファンファーレ | [効果音ラボ](https://soundeffect-lab.info/) |
+| `se-defeat.mp3` | 敗北 | [効果音ラボ](https://soundeffect-lab.info/) |
+| `se-turn.mp3` | ターン開始 | [効果音ラボ](https://soundeffect-lab.info/) |
+
+### 配置先
+
+ダウンロードした素材を以下のディレクトリに配置してください。
+
+```
+apps/mobile/assets/sounds/
+├── bgm-battle.mp3
+├── se-attack.mp3
+├── se-special.mp3
+├── se-defense.mp3
+├── se-counter-ok.mp3
+├── se-counter-fail.mp3
+├── se-damage.mp3
+├── se-victory.mp3
+├── se-defeat.mp3
+└── se-turn.mp3
+```
+
+音源ファイルがなくてもアプリは動作しますが、バトル中の効果音・BGMが再生されません。
+
+## クレジット・謝辞
+
+本プロジェクトのバトル演出は、素晴らしいフリー素材を提供してくださっている以下のサイトのおかげで成り立っています。
+
+- **[魔王魂](https://maou.audio/)** — バトルBGM
+  - 高品質なゲーム向けBGMを無料で提供されています。ありがとうございます。
+- **[効果音ラボ](https://soundeffect-lab.info/)** — バトル効果音（攻撃・防御・必殺技・カウンター・勝敗等）
+  - 豊富なカテゴリの効果音を無料で提供されています。ありがとうございます。
+
+各素材の利用にあたっては、それぞれのサイトの利用規約に従ってください。素材ファイルの再配布は禁止されています。
+
 ## ライセンス
 
 MIT

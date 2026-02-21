@@ -11,6 +11,14 @@ import type {
 } from "@nfc-card-battle/shared";
 import { TURN_TIME_LIMIT, getExpProgress } from "@nfc-card-battle/shared";
 import type { BattleTransport, BattleTransportEvents } from "@/lib/battle-transport";
+import {
+  preloadSounds,
+  playSe,
+  playBgm,
+  stopBgm,
+  unloadAll,
+  getSeKeyForResult,
+} from "@/lib/audio";
 
 // チュートリアルと共通のresultData形式
 export interface ResultData {
@@ -223,6 +231,7 @@ export function useBattle(transport: BattleTransport): UseBattleReturn {
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const myRoleRef = useRef<"A" | "B" | null>(null);
+  const audioInitRef = useRef(false);
 
   const damageAnim = useRef(new Animated.Value(0)).current;
   const numberAnim = useRef(new Animated.Value(0)).current;
@@ -264,6 +273,17 @@ export function useBattle(transport: BattleTransport): UseBattleReturn {
         setMyImageType("idle");
         setOpponentImageType("idle");
 
+        // オーディオ: 初回はプリロード+BGM開始、以降はターンSE
+        if (!audioInitRef.current) {
+          audioInitRef.current = true;
+          preloadSounds().then(() => {
+            playBgm();
+            playSe("turn");
+          });
+        } else {
+          playSe("turn");
+        }
+
         // フィールドアニメーション
         fieldAnim.setValue(0);
         Animated.timing(fieldAnim, {
@@ -299,6 +319,18 @@ export function useBattle(transport: BattleTransport): UseBattleReturn {
 
         const rd = buildResultData(result, isAttacker);
         setResultData(rd);
+
+        // SE: 結果タイプに応じた効果音
+        const seKey = getSeKeyForResult(result.resultType, result.attackerAction, isAttacker);
+        playSe(seKey);
+
+        // 600ms後: ダメージ受けた側のSE
+        const tookDamage = isAttacker
+          ? result.damageToAttacker > 0
+          : result.damageToDefender > 0;
+        if (tookDamage) {
+          setTimeout(() => playSe("damage"), 600);
+        }
 
         // 画像タイプ更新
         if (isAttacker) {
@@ -386,6 +418,12 @@ export function useBattle(transport: BattleTransport): UseBattleReturn {
         setWinner(data.winner);
         setBattleEndData(data);
         setPhase("finished");
+
+        // BGM停止 → 勝敗SE
+        stopBgm().then(() => {
+          const isWin = data.winner === myRoleRef.current;
+          playSe(isWin ? "victory" : "defeat");
+        });
       },
 
       onOpponentDisconnected: () => {
@@ -400,6 +438,8 @@ export function useBattle(transport: BattleTransport): UseBattleReturn {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
       transport.disconnect();
+      stopBgm();
+      unloadAll();
     };
   }, [transport]);
 

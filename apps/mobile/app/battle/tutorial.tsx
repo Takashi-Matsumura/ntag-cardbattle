@@ -20,6 +20,14 @@ import { ActionCardController } from "@/components/ActionCardController";
 import { getSettings } from "@/lib/settings";
 import { getLocalCard, getCharacterBase } from "@/lib/local-cards";
 import { CHARACTERS } from "@nfc-card-battle/shared";
+import {
+  preloadSounds,
+  playSe,
+  playBgm,
+  stopBgm,
+  unloadAll,
+  getSeKeyForResult,
+} from "@/lib/audio";
 
 const fetchHeaders = { "ngrok-skip-browser-warning": "true" };
 
@@ -284,6 +292,7 @@ export default function TutorialScreen() {
     setResultData(null);
     setPlayerImageType("idle");
     setCpuImageType("idle");
+    playSe("turn");
 
     // フィールドアニメーション
     fieldAnim.setValue(0);
@@ -316,6 +325,10 @@ export default function TutorialScreen() {
 
     setPlayerImageType(immediatePlayerImg);
     setCpuImageType(immediateCpuImg);
+
+    // SE: 結果タイプに応じた効果音
+    const seKey = getSeKeyForResult(result.resultType, result.attackerAction, isPlayerAttacker);
+    playSe(seKey);
 
     damageAnim.setValue(0);
     Animated.timing(damageAnim, {
@@ -368,11 +381,12 @@ export default function TutorialScreen() {
         }),
       ]).start();
 
-      // プレイヤーがダメージを受けた場合のシェイク
+      // プレイヤーがダメージを受けた場合のダメージSE+シェイク
       const playerTookDamage = isPlayerAttacker
         ? result.damageToAttacker > 0
         : result.damageToDefender > 0;
       if (playerTookDamage) {
+        playSe("damage");
         shakeAnim.setValue(0);
         Animated.sequence([
           Animated.timing(shakeAnim, { toValue: 10, duration: 50, useNativeDriver: true }),
@@ -394,8 +408,10 @@ export default function TutorialScreen() {
 
       if (newMyHp <= 0 || newCpuHp <= 0) {
         setTimeout(() => {
-          setWinner(newCpuHp <= 0 ? "player" : "cpu");
+          const isWin = newCpuHp <= 0;
+          setWinner(isWin ? "player" : "cpu");
           setPhase("finished");
+          stopBgm().then(() => playSe(isWin ? "victory" : "defeat"));
         }, 1500);
       } else {
         const nextTurn: TutorialTurn = isPlayerAttacker ? "cpu_attack" : "player_attack";
@@ -480,6 +496,8 @@ export default function TutorialScreen() {
   useEffect(() => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
+      stopBgm();
+      unloadAll();
     };
   }, []);
 
@@ -544,6 +562,10 @@ export default function TutorialScreen() {
         <TouchableOpacity
           onPress={() => {
             setPhase("battle");
+            preloadSounds().then(() => {
+              playBgm();
+              playSe("turn");
+            });
             startTurn("player_attack");
           }}
           className="bg-[#6c5ce7] w-full py-4 rounded-2xl mt-6 flex-row items-center justify-center"

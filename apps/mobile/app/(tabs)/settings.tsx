@@ -382,6 +382,13 @@ export default function SettingsScreen() {
           </Text>
         </View>
       }
+      ListFooterComponent={
+        <View className="mt-6 mb-8 pt-4 border-t border-[#2a2a4e]">
+          <Text className="text-gray-600 text-xs text-center">
+            BGM素材: 魔王魂（https://maou.audio/）
+          </Text>
+        </View>
+      }
     />
   );
 }

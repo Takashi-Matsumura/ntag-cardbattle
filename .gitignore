@@ -35,3 +35,7 @@ next-env.d.ts
 
 # prisma
 apps/server/prisma/*.db
+
+# フリー素材の音源ファイル（利用規約により再配布禁止）
+# ダウンロード手順は README.md を参照
+apps/mobile/assets/sounds/*.mp3
