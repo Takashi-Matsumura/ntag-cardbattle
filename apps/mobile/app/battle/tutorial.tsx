@@ -213,6 +213,21 @@ export default function TutorialScreen() {
     return toCharacter(pick.id, pick);
   };
 
+  // --- デモプレイ（NFCスキャンなし） ---
+  const startDemo = () => {
+    const playerId = Math.floor(Math.random() * CHARACTERS.length) + 1;
+    const base = CHARACTERS[playerId - 1];
+    const player = toCharacter(playerId, base);
+    setPlayerChar(player);
+    setMyHp(base.hp);
+
+    const cpu = pickCpu(playerId);
+    setCpuChar(cpu);
+    setCpuHp(cpu.hp);
+
+    setPhase("intro");
+  };
+
   // --- NFCスキャン ---
   const scanCard = async () => {
     setScanning(true);
@@ -528,6 +543,16 @@ export default function TutorialScreen() {
             />
             <Text className="text-white font-bold text-base ml-2">
               {scanning ? "読み取り中..." : "カードをスキャン"}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={startDemo}
+            disabled={scanning}
+            className="w-full py-4 rounded-2xl mt-3 flex-row items-center justify-center bg-[#0f0f1a] border border-[#2a2a4e]"
+          >
+            <Ionicons name="game-controller-outline" size={22} color="#888" />
+            <Text className="text-gray-400 font-bold text-base ml-2">
+              カードなしで体験
             </Text>
           </TouchableOpacity>
         </View>

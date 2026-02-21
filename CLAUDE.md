@@ -122,6 +122,12 @@ Device A (Host/エンジン) ←→ MultipeerConnectivity ←→ Device B (Guest
 4. 両者接続完了 → `p2p.tsx` へ遷移（role=host/guest）
 5. NFCカードスキャン → ローカルデータ使用 → バトル開始
 
+### チュートリアル デモモード
+
+- scanフェーズに「カードなしで体験」ボタンを表示（NFCスキャンボタンの下）
+- NFCカード・ローカルカード・サーバー通信を一切経由せず、ランダムキャラでバトル体験可能
+- App Store審査対応：審査員がNTAGカードなしでもアプリを体験できる
+
 ## 開発環境の構成
 
 テザリング環境などローカルネットワークが使えない場合、ngrokトンネルを使用する:
@@ -137,7 +143,7 @@ Device A (Host/エンジン) ←→ MultipeerConnectivity ←→ Device B (Guest
 - `apps/server/src/game/engine.ts` — shared/engine.tsのre-export
 - `apps/server/src/game/room-manager.ts` — ルーム管理（ターン状態・クールダウン管理）
 - `apps/server/src/game/events.ts` — Socket.ioイベントハンドラ（ターン制フロー）
-- `apps/mobile/app/battle/tutorial.tsx` — チュートリアルバトル（オフライン: ローカルカード使用 / オンライン: サーバー使用）
+- `apps/mobile/app/battle/tutorial.tsx` — チュートリアルバトル（オフライン: ローカルカード使用 / オンライン: サーバー使用 / デモモード: NFCスキャン不要）
 - `apps/mobile/app/battle/[roomId].tsx` — オンライン対人バトル（Socket.ioトランスポート）
 - `apps/mobile/app/battle/local.tsx` — P2Pマッチング画面（ホスト/ゲスト選択→ピア検出）
 - `apps/mobile/app/battle/p2p.tsx` — P2Pバトル画面（MultipeerConnectivity）
