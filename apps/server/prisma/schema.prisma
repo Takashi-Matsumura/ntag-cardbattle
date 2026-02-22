@@ -3,8 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider = "sqlite"
+  url      = "file:./dev.db"
 }
 
 // キャラクターテンプレート（管理者が事前に作成）
@@ -15,19 +15,5 @@ model Character {
   attack    Int
   defense   Int
   imageUrl  String?
-  cards     Card[]
   createdAt DateTime @default(now())
-}
-
-// NFCカード（プレイヤーが登録、管理者がキャラ割当）
-model Card {
-  id           String     @id // NTAG UID
-  character    Character? @relation(fields: [characterId], references: [id])
-  characterId  Int?
-  level        Int        @default(1)
-  exp          Int        @default(0)
-  totalWins    Int        @default(0)
-  totalLosses  Int        @default(0)
-  token        String     @unique @default(dbgenerated("gen_random_uuid()"))
-  registeredAt DateTime   @default(now())
 }

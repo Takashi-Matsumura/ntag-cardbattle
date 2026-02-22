@@ -7,21 +7,13 @@
 ポート3000, 8081を使用中のプロセスがあれば確認し、必要に応じて停止してください。
 ngrokプロセスも確認してください。
 
-### 2. Docker (PostgreSQL) 起動
+### 2. Prisma Client 生成 + DB準備
 
 ```
-pnpm docker:up
+cd apps/server && npx prisma generate && npx prisma db push
 ```
 
-起動を確認してください。
-
-### 3. Prisma Client 生成
-
-```
-cd apps/server && npx prisma generate
-```
-
-### 4. Next.js + Socket.io サーバ起動 (バックグラウンド)
+### 3. Next.js サーバ起動 (バックグラウンド)
 
 ```
 pnpm dev:server
@@ -29,7 +21,7 @@ pnpm dev:server
 
 ポート3000で起動するのを確認してください。
 
-### 5. ngrok トンネル起動 (バックグラウンド)
+### 4. ngrok トンネル起動 (バックグラウンド)
 
 ```
 ngrok http 3000
@@ -37,17 +29,17 @@ ngrok http 3000
 
 起動後、ngrokが割り当てたPublic URLを取得してください。
 
-### 6. モバイルアプリの .env 更新
+### 5. モバイルアプリの .env 更新
 
 `apps/mobile/.env` の `EXPO_PUBLIC_SERVER_URL` を、ngrokで取得したURLに更新してください。
 
-### 7. Expo Metro バンドラ起動 (バックグラウンド)
+### 6. Expo Metro バンドラ起動 (バックグラウンド)
 
 ```
 cd apps/mobile && npx expo start --tunnel
 ```
 
-### 8. 実機ビルド (Xcode)
+### 7. 実機ビルド (Xcode)
 
 iOSの実機（iPhone 15）でアプリを動かすため、以下を実行してください:
 
@@ -65,7 +57,7 @@ open apps/mobile/ios/NFCCardBattle.xcworkspace
 - デバイスセレクタで接続済みの **iPhone 15** を選択
 - `Cmd + R` でビルド＆実行
 
-### 9. Expo 接続URL取得・完了レポート
+### 8. Expo 接続URL取得・完了レポート
 
 Expo Metro バンドラのトンネルURLを取得してください（Expoが使う ngrok は port 4041 で動作します）:
 
@@ -75,7 +67,6 @@ curl -s http://127.0.0.1:4041/api/tunnels | python3 -c "import sys,json; data=js
 
 すべて起動したら、以下の情報をまとめて報告してください:
 
-- PostgreSQL: 起動状態
 - サーバ: http://localhost:3000
 - ngrok URL: (取得したURL)
 - 管理画面: (ngrok URL)/admin/cards

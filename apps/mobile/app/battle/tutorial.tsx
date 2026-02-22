@@ -17,7 +17,6 @@ import {
 import { readNfcUid } from "@/lib/nfc";
 import { BattleCard } from "@/components/BattleCard";
 import { ActionCardController } from "@/components/ActionCardController";
-import { getSettings } from "@/lib/settings";
 import { getLocalCard, getCharacterBase } from "@/lib/local-cards";
 import { CHARACTERS } from "@nfc-card-battle/shared";
 import {
@@ -28,8 +27,6 @@ import {
   unloadAll,
   getSeKeyForResult,
 } from "@/lib/audio";
-
-const fetchHeaders = { "ngrok-skip-browser-warning": "true" };
 
 type Phase = "scan" | "intro" | "battle" | "finished";
 type TutorialTurn = "player_attack" | "cpu_attack";
@@ -239,55 +236,31 @@ export default function TutorialScreen() {
         return;
       }
 
-      const settings = await getSettings();
-
-      if (settings.onlineMode && settings.serverUrl) {
-        // オンライン: サーバーからカードデータ取得
-        const cardRes = await fetch(`${settings.serverUrl}/api/cards`, {
-          headers: fetchHeaders,
-        });
-        const cards = await cardRes.json();
-        const myCard = cards.find((c: { id: string }) => c.id === uid);
-
-        if (!myCard || !myCard.character) {
-          Alert.alert("エラー", "このカードは未登録またはキャラクターが割り当てられていません");
-          setScanning(false);
-          return;
-        }
-
-        setPlayerChar(myCard.character);
-        setMyHp(myCard.character.hp);
-
-        const cpuPick = pickCpu(myCard.character.id);
-        setCpuChar(cpuPick);
-        setCpuHp(cpuPick.hp);
-      } else {
-        // オフライン: ローカルカードデータ使用
-        const localCard = await getLocalCard(uid);
-        if (!localCard) {
-          Alert.alert(
-            "未登録カード",
-            "このカードは登録されていません。\n設定画面の「カード登録（ガチャ）」で先にカードを登録してください。"
-          );
-          setScanning(false);
-          return;
-        }
-
-        const base = getCharacterBase(localCard.characterId);
-        if (!base) {
-          Alert.alert("エラー", "キャラクターデータが見つかりません");
-          setScanning(false);
-          return;
-        }
-
-        const player = toCharacter(localCard.characterId, base);
-        setPlayerChar(player);
-        setMyHp(base.hp);
-
-        const cpuPick = pickCpu(localCard.characterId);
-        setCpuChar(cpuPick);
-        setCpuHp(cpuPick.hp);
+      // ローカルカードデータ使用
+      const localCard = await getLocalCard(uid);
+      if (!localCard) {
+        Alert.alert(
+          "未登録カード",
+          "このカードは登録されていません。\n設定画面の「カード登録（ガチャ）」で先にカードを登録してください。"
+        );
+        setScanning(false);
+        return;
       }
+
+      const base = getCharacterBase(localCard.characterId);
+      if (!base) {
+        Alert.alert("エラー", "キャラクターデータが見つかりません");
+        setScanning(false);
+        return;
+      }
+
+      const player = toCharacter(localCard.characterId, base);
+      setPlayerChar(player);
+      setMyHp(base.hp);
+
+      const cpuPick = pickCpu(localCard.characterId);
+      setCpuChar(cpuPick);
+      setCpuHp(cpuPick.hp);
 
       setPhase("intro");
     } catch {

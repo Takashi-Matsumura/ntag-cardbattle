@@ -8,9 +8,7 @@
     "build:server": "pnpm --filter @nfc-card-battle/server build",
     "db:migrate": "pnpm --filter @nfc-card-battle/server db:migrate",
     "db:seed": "pnpm --filter @nfc-card-battle/server db:seed",
-    "db:push": "pnpm --filter @nfc-card-battle/server db:push",
-    "docker:up": "docker compose up -d",
-    "docker:down": "docker compose down"
+    "db:push": "pnpm --filter @nfc-card-battle/server db:push"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

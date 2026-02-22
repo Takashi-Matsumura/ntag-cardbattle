@@ -14,21 +14,13 @@ WiFiインターフェース（en0）のIPアドレスを取得してくださ�
 ipconfig getifaddr en0
 ```
 
-### 3. Docker (PostgreSQL) 起動
+### 3. Prisma Client 生成 + DB準備
 
 ```
-pnpm docker:up
+cd apps/server && npx prisma generate && npx prisma db push
 ```
 
-起動を確認してください。
-
-### 4. Prisma Client 生成
-
-```
-cd apps/server && npx prisma generate
-```
-
-### 5. Next.js + Socket.io サーバ起動 (バックグラウンド)
+### 4. Next.js サーバ起動 (バックグラウンド)
 
 ```
 pnpm dev:server
@@ -36,11 +28,11 @@ pnpm dev:server
 
 ポート3000で起動するのを確認してください。
 
-### 6. モバイルアプリの .env 更新
+### 5. モバイルアプリの .env 更新
 
 `apps/mobile/.env` の `EXPO_PUBLIC_SERVER_URL` を、取得したローカルIPアドレスを使って `http://<ローカルIP>:3000` に更新してください。
 
-### 7. 実機iPhoneにビルド＆インストール
+### 6. 実機iPhoneにビルド＆インストール
 
 NFC機能を使うため、実機iPhoneへのビルドが必要です。
 
@@ -64,11 +56,10 @@ cd apps/mobile && npx expo run:ios --device "<選択されたUDID>"
 このコマンドはビルドに数分かかります。タイムアウトを長め（600秒）に設定してください。
 ビルド完了後、アプリが実機に自動インストールされて起動します。
 
-### 8. 完了レポート
+### 7. 完了レポート
 
 すべて起動したら、以下の情報をまとめて報告してください:
 
-- PostgreSQL: 起動状態
 - サーバ: http://localhost:3000
 - ローカルIP: (取得したIP)
 - サーバURL: http://<ローカルIP>:3000

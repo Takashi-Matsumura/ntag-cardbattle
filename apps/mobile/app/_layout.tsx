@@ -1,22 +1,8 @@
-import { useEffect } from "react";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { getSettings } from "@/lib/settings";
-import { connectSocket, disconnectSocket } from "@/lib/socket";
 import "../global.css";
 
 export default function RootLayout() {
-  useEffect(() => {
-    getSettings().then((s) => {
-      if (s.onlineMode && s.serverUrl) {
-        connectSocket(s.serverUrl);
-      }
-    });
-    return () => {
-      disconnectSocket();
-    };
-  }, []);
-
   return (
     <>
       <StatusBar style="light" />
@@ -35,14 +21,6 @@ export default function RootLayout() {
           name="battle/tutorial"
           options={{
             title: "チュートリアル",
-          }}
-        />
-        <Stack.Screen
-          name="battle/[roomId]"
-          options={{
-            title: "バトル",
-            headerBackVisible: false,
-            gestureEnabled: false,
           }}
         />
       </Stack>

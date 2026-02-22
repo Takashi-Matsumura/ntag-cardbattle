@@ -86,30 +86,3 @@ export interface NfcCardData {
   wins: number;
   losses: number;
 }
-
-// --- Socket.io イベント ---
-export interface ClientToServerEvents {
-  create_room: () => void;
-  join_room: (data: { roomCode: string }) => void;
-  register_card: (data: { cardUid: string; token: string }) => void;
-  select_action: (data: { action: ActionType }) => void;
-  leave_room: () => void;
-}
-
-export interface ServerToClientEvents {
-  room_created: (data: { roomCode: string }) => void;
-  opponent_joined: () => void;
-  card_registered: (data: { card: Character; role: "A" | "B"; level: number }) => void;
-  opponent_card_registered: (data: { card: Character; level: number }) => void;
-  battle_start: (data: {
-    turn: number;
-    timeLimit: number;
-    turnType: TurnType;
-    role: "A" | "B";
-    specialCd: number;
-  }) => void;
-  turn_result: (data: TurnResult) => void;
-  battle_end: (data: BattleEndData) => void;
-  opponent_disconnected: () => void;
-  error: (data: { message: string }) => void;
-}

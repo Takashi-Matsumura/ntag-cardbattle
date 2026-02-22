@@ -3,13 +3,11 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 const STORAGE_KEY = "app_settings";
 
 export interface AppSettings {
-  onlineMode: boolean;
-  serverUrl: string;
+  soundEnabled: boolean;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
-  onlineMode: false,
-  serverUrl: "",
+  soundEnabled: true,
 };
 
 // 設定を読み込み（未保存時はデフォルト値）

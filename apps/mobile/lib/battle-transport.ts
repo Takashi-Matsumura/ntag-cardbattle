@@ -27,7 +27,7 @@ export interface BattleTransportEvents {
 export interface BattleTransport {
   connect(events: BattleTransportEvents): void;
   disconnect(): void;
-  registerCard(cardUid: string, token?: string): void;
+  registerCard(cardUid: string): void;
   selectAction(action: ActionType): void;
   leaveRoom(): void;
 }

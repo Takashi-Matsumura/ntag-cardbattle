@@ -9,9 +9,9 @@ export default function Home() {
           href="/admin/cards"
           className="block p-4 bg-white rounded-lg shadow hover:shadow-md transition-shadow"
         >
-          <h2 className="text-xl font-semibold">カード管理</h2>
+          <h2 className="text-xl font-semibold">キャラクター管理</h2>
           <p className="text-gray-600">
-            登録済みカードの一覧・キャラクター割当
+            キャラクターの作成・編集・ステータス管理
           </p>
         </Link>
         <Link

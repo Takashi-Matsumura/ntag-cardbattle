@@ -1,11 +1,8 @@
-import { useState, useEffect, useRef } from "react";
-import { View, Text, Image, Animated } from "react-native";
+import { useEffect, useRef } from "react";
+import { View, Text, Animated } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { Character, CharacterImageType } from "@nfc-card-battle/shared";
-import { getCharacterImageUrl } from "@nfc-card-battle/shared";
 import { HpBar } from "./HpBar";
-
-const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL || "http://localhost:3000";
 
 /** タイプ別プレースホルダー設定 */
 const IMAGE_TYPE_PLACEHOLDER: Record<
@@ -63,15 +60,12 @@ export function BattleCard({
 }: BattleCardProps) {
   const config = VARIANT_CONFIG[variant];
   const displayLabel = label ?? config.defaultLabel;
-  const [imageError, setImageError] = useState(false);
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const shakeAnim = useRef(new Animated.Value(0)).current;
   const isFirstRender = useRef(true);
 
-  // imageType 変更時にエラー状態をリセット + アニメーション発火
+  // imageType 変更時にアニメーション発火
   useEffect(() => {
-    setImageError(false);
-
     // 初回レンダリング時はアニメーションしない
     if (isFirstRender.current) {
       isFirstRender.current = false;
@@ -109,7 +103,6 @@ export function BattleCard({
     }
   }, [imageType]);
 
-  const imageUrl = getCharacterImageUrl(SERVER_URL, character.id, imageType);
   const placeholder = IMAGE_TYPE_PLACEHOLDER[imageType];
 
   return (
@@ -134,7 +127,7 @@ export function BattleCard({
         <Text className="text-white/70 text-xs">{displayLabel}</Text>
       </View>
 
-      {/* 画像エリア */}
+      {/* キャラクターアイコンエリア */}
       {!isCompact && (
         <View
           className={`${config.bgImage} items-center justify-center`}
@@ -149,28 +142,19 @@ export function BattleCard({
               ],
             }}
           >
-            {!imageError ? (
-              <Image
-                source={{ uri: imageUrl }}
-                className="w-full h-full"
-                resizeMode="contain"
-                onError={() => setImageError(true)}
+            <View className="items-center justify-center">
+              <Ionicons
+                name={placeholder.icon}
+                size={48}
+                color={placeholder.color}
               />
-            ) : (
-              <View className="items-center justify-center">
-                <Ionicons
-                  name={placeholder.icon}
-                  size={48}
-                  color={placeholder.color}
-                />
-                <Text
-                  className="text-gray-500 text-xs mt-1 font-bold"
-                  style={{ textTransform: "uppercase" }}
-                >
-                  {imageType}
-                </Text>
-              </View>
-            )}
+              <Text
+                className="text-gray-500 text-xs mt-1 font-bold"
+                style={{ textTransform: "uppercase" }}
+              >
+                {imageType}
+              </Text>
+            </View>
           </Animated.View>
         </View>
       )}

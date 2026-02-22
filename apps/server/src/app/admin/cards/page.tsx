@@ -12,15 +12,7 @@ interface Character {
   imageUrl: string | null;
 }
 
-interface Card {
-  id: string;
-  characterId: number | null;
-  character: Character | null;
-  registeredAt: string;
-}
-
 export default function CardsPage() {
-  const [cards, setCards] = useState<Card[]>([]);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -34,11 +26,7 @@ export default function CardsPage() {
   const [editingChar, setEditingChar] = useState<Character | null>(null);
 
   const fetchData = async () => {
-    const [cardsRes, charsRes] = await Promise.all([
-      fetch("/api/cards"),
-      fetch("/api/characters"),
-    ]);
-    setCards(await cardsRes.json());
+    const charsRes = await fetch("/api/characters");
     setCharacters(await charsRes.json());
     setLoading(false);
   };
@@ -46,19 +34,6 @@ export default function CardsPage() {
   useEffect(() => {
     fetchData();
   }, []);
-
-  // カードにキャラクター割当
-  const assignCharacter = async (
-    cardId: string,
-    characterId: number | null
-  ) => {
-    await fetch("/api/cards", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: cardId, characterId }),
-    });
-    fetchData();
-  };
 
   // キャラクター作成
   const createCharacter = async (e: React.FormEvent) => {
@@ -105,7 +80,7 @@ export default function CardsPage() {
       <Link href="/" className="text-blue-600 hover:underline text-sm mb-4 inline-block">
         ← ホームに戻る
       </Link>
-      <h1 className="text-3xl font-bold mb-8">カード管理</h1>
+      <h1 className="text-3xl font-bold mb-8">キャラクター管理</h1>
 
       {/* --- キャラクター一覧 --- */}
       <section className="mb-12">
@@ -292,56 +267,6 @@ export default function CardsPage() {
             ))}
           </tbody>
         </table>
-      </section>
-
-      {/* --- カード一覧 --- */}
-      <section>
-        <h2 className="text-2xl font-semibold mb-4">登録済みカード</h2>
-        {cards.length === 0 ? (
-          <p className="text-gray-500 bg-white p-4 rounded-lg shadow">
-            カードがまだ登録されていません。モバイルアプリからNTAGをスキャンしてください。
-          </p>
-        ) : (
-          <table className="w-full bg-white rounded-lg shadow">
-            <thead>
-              <tr className="border-b text-left text-sm text-gray-600">
-                <th className="p-3">UID</th>
-                <th className="p-3">キャラクター</th>
-                <th className="p-3">登録日</th>
-              </tr>
-            </thead>
-            <tbody>
-              {cards.map((card) => (
-                <tr key={card.id} className="border-b last:border-0">
-                  <td className="p-3 font-mono text-sm">{card.id}</td>
-                  <td className="p-3">
-                    <select
-                      value={card.characterId ?? ""}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        assignCharacter(
-                          card.id,
-                          val ? parseInt(val) : null
-                        );
-                      }}
-                      className="border rounded px-2 py-1"
-                    >
-                      <option value="">未割当</option>
-                      {characters.map((char) => (
-                        <option key={char.id} value={char.id}>
-                          {char.name}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="p-3 text-sm text-gray-500">
-                    {new Date(card.registeredAt).toLocaleDateString("ja-JP")}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
       </section>
     </main>
   );
