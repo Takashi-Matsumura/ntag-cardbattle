@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "NFC Card Battle - 管理画面",
-  description: "NFC Card Battle サーバ管理画面",
+  title: "NTag Battle - 管理画面",
+  description: "NTag Battle サーバ管理画面",
 };
 
 export default function RootLayout({

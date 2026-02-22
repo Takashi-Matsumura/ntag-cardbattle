@@ -49,7 +49,7 @@ cd apps/mobile/ios && pod install
 open apps/mobile/ios/NFCCardBattle.xcworkspace
 ```
 
-ユーザーにXcodeで以下を行うよう案内してください:
+ユーザにXcodeで以下を行うよう案内してください:
 - デバイスセレクタで接続済みの **iPhone 15** を選択
 - `Cmd + R` でビルド＆実行
 

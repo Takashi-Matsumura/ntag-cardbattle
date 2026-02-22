@@ -1,4 +1,4 @@
-# NFC Card Battle
+# NTag Battle
 
 NTAGを使ったカードバトルゲーム。物理NTAGカードのUIDをスマホで読み取り、ローカル対戦（P2P）でリアルタイム対戦する。カードへのキャラ登録は設定画面の「ガチャ」で行う（サーバ不要）。
 
@@ -40,20 +40,20 @@ pnpm db:studio                # Prisma Studio起動
 
 ## 技術スタック
 
-| レイヤー | 技術 |
-|---------|------|
-| モバイルアプリ | Expo + NativeWind + react-native-nfc-manager |
-| 管理画面 | Next.js (TypeScript) + Tailwind CSS |
-| データベース | SQLite + Prisma |
-| ローカルデータ | AsyncStorage（カードデータ・アプリ設定） |
-| P2P通信 | MultipeerConnectivity（Bluetooth/WiFi Direct） |
+| レイヤー       | 技術                                           |
+| -------------- | ---------------------------------------------- |
+| モバイルアプリ | Expo + NativeWind + react-native-nfc-manager   |
+| 管理画面       | Next.js (TypeScript) + Tailwind CSS            |
+| データベース   | SQLite + Prisma                                |
+| ローカルデータ | AsyncStorage（カードデータ・アプリ設定）       |
+| P2P通信        | MultipeerConnectivity（Bluetooth/WiFi Direct） |
 
 ## バトルシステム
 
 ターン制バトル。プレイヤーA（ホスト）が先攻で、攻撃/防御ターンを交互に繰り返す。
 
 - **攻撃ターン**: 攻撃 / 必殺技（CT: 3ターン、倍率1.8x）
-- **防御ターン**: 防御（防御力2倍） / カウンター（成功率30%、成功時1.5xダメージ反撃、失敗時防御力無視）
+- **防御ターン**: 防御（防御力1.5倍） / カウンター（成功率30%、成功時1.5xダメージ反撃、失敗時防御力無視）
 - **タイムアウト**: 攻撃側→ペナルティ（防御側が反撃）、防御側→ノーガード（防御力無視フルダメージ）
 - **勝敗**: ホスト側エンジンが判定し、両者に結果を送信
 
@@ -90,6 +90,7 @@ Device A (Host/エンジン) ←→ MultipeerConnectivity ←→ Device B (Guest
 - **トランスポート抽象化**: `BattleTransport` インターフェースでP2Pトランスポートを実装
 
 **P2Pマッチングフロー**:
+
 1. 「ローカル対戦」タップ → `local.tsx` へ遷移
 2. 「ホストとして始める」or「相手を探す」選択
 3. MultipeerConnectivity でピア検出 → 自動接続
@@ -111,13 +112,14 @@ Device A (Host/エンジン) ←→ MultipeerConnectivity ←→ Device B (Guest
 ## ファイル構成の要点
 
 ### サーバ側（管理画面・シミュレータ）
-- `apps/server/src/server.ts` — カスタムHTTPサーバ（Next.js）
+
 - `apps/server/src/game/engine.ts` — shared/engine.tsのre-export
 - `apps/server/src/game/simulator.ts` — バトルシミュレーション（ゲームバランス分析）
 - `apps/server/src/app/admin/cards/` — キャラクター管理画面
 - `apps/server/src/app/admin/simulator/` — バトルシミュレータ画面
 
 ### モバイルアプリ
+
 - `apps/mobile/app/battle/tutorial.tsx` — チュートリアルバトル（ローカルカード使用 / デモモード: NFCスキャン不要）
 - `apps/mobile/app/battle/local.tsx` — P2Pマッチング画面（ホスト/ゲスト選択→ピア検出）
 - `apps/mobile/app/battle/p2p.tsx` — P2Pバトル画面（MultipeerConnectivity）
@@ -135,6 +137,7 @@ Device A (Host/エンジン) ←→ MultipeerConnectivity ←→ Device B (Guest
 - `apps/mobile/modules/multipeer-connectivity/` — iOS MultipeerConnectivity Expoモジュール
 
 ### 共有パッケージ
+
 - `packages/shared/src/types.ts` — 共有型定義（TurnResult, TurnType等）
 - `packages/shared/src/constants.ts` — 共有定数（バトルパラメータ・経験値・レベル）
 - `packages/shared/src/damage.ts` — ダメージ変動計算

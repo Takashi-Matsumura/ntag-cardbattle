@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "NFC Card Battle",
-    "slug": "nfc-card-battle",
+    "name": "NTag Battle",
+    "slug": "ntag-battle",
     "version": "1.0.0",
     "orientation": "portrait",
     "scheme": "nfc-battle",
