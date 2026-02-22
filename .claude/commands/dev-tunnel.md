@@ -29,17 +29,13 @@ ngrok http 3000
 
 起動後、ngrokが割り当てたPublic URLを取得してください。
 
-### 5. モバイルアプリの .env 更新
-
-`apps/mobile/.env` の `EXPO_PUBLIC_SERVER_URL` を、ngrokで取得したURLに更新してください。
-
-### 6. Expo Metro バンドラ起動 (バックグラウンド)
+### 5. Expo Metro バンドラ起動 (バックグラウンド)
 
 ```
 cd apps/mobile && npx expo start --tunnel
 ```
 
-### 7. 実機ビルド (Xcode)
+### 6. 実機ビルド (Xcode)
 
 iOSの実機（iPhone 15）でアプリを動かすため、以下を実行してください:
 
@@ -57,7 +53,7 @@ open apps/mobile/ios/NFCCardBattle.xcworkspace
 - デバイスセレクタで接続済みの **iPhone 15** を選択
 - `Cmd + R` でビルド＆実行
 
-### 8. Expo 接続URL取得・完了レポート
+### 7. Expo 接続URL取得・完了レポート
 
 Expo Metro バンドラのトンネルURLを取得してください（Expoが使う ngrok は port 4041 で動作します）:
 
@@ -72,6 +68,5 @@ curl -s http://127.0.0.1:4041/api/tunnels | python3 -c "import sys,json; data=js
 - 管理画面: (ngrok URL)/admin/cards
 - Metro バンドラ: 起動状態
 - **Expo 接続URL**: (取得したURL) ← 実機の「Enter URL manually」に入力
-- `apps/mobile/.env` に設定したURL
 
 注意: ngrokの無料版ではAPIリクエストに `ngrok-skip-browser-warning: true` ヘッダーが必要です（アプリ側で対応済み）。

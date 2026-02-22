@@ -28,11 +28,7 @@ pnpm dev:server
 
 ポート3000で起動するのを確認してください。
 
-### 5. モバイルアプリの .env 更新
-
-`apps/mobile/.env` の `EXPO_PUBLIC_SERVER_URL` を、取得したローカルIPアドレスを使って `http://<ローカルIP>:3000` に更新してください。
-
-### 6. 実機iPhoneにビルド＆インストール
+### 5. 実機iPhoneにビルド＆インストール
 
 NFC機能を使うため、実機iPhoneへのビルドが必要です。
 
@@ -56,7 +52,7 @@ cd apps/mobile && npx expo run:ios --device "<選択されたUDID>"
 このコマンドはビルドに数分かかります。タイムアウトを長め（600秒）に設定してください。
 ビルド完了後、アプリが実機に自動インストールされて起動します。
 
-### 7. 完了レポート
+### 6. 完了レポート
 
 すべて起動したら、以下の情報をまとめて報告してください:
 
@@ -65,4 +61,3 @@ cd apps/mobile && npx expo run:ios --device "<選択されたUDID>"
 - サーバURL: http://<ローカルIP>:3000
 - 管理画面: http://<ローカルIP>:3000/admin/cards
 - 実機ビルド: ビルド先デバイス名
-- `apps/mobile/.env` に設定したURL

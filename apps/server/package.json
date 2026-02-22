@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "tsx src/server.ts",
+    "dev": "next dev -H 0.0.0.0",
     "build": "next build",
-    "start": "NODE_ENV=production node dist/server.js",
+    "start": "next start -H 0.0.0.0",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",

@@ -38,18 +38,6 @@ export async function saveLocalCard(card: LocalCardData): Promise<void> {
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(cards));
 }
 
-// サーバから取得したカード情報をローカルにキャッシュ
-export async function cacheCardFromServer(
-  cardUid: string,
-  characterId: number,
-  level: number,
-  exp: number,
-  totalWins: number,
-  totalLosses: number,
-): Promise<void> {
-  await saveLocalCard({ cardUid, characterId, level, exp, totalWins, totalLosses });
-}
-
 // characterIdからベースデータを取得（1始まり）
 export function getCharacterBase(characterId: number): CharacterBase | null {
   if (characterId < 1 || characterId > CHARACTERS.length) return null;

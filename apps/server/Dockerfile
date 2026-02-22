@@ -4,7 +4,7 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 
 WORKDIR /app
 
-COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml .npmrc ./
 COPY packages/shared/package.json ./packages/shared/
 COPY apps/server/package.json ./apps/server/
 

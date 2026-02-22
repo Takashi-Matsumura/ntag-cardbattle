@@ -19,15 +19,6 @@ export interface Character {
   imageUrl: string | null;
 }
 
-export interface Card {
-  id: string; // NTAG UID
-  character: Character | null;
-  level: number;
-  exp: number;
-  totalWins: number;
-  totalLosses: number;
-}
-
 // --- バトル関連 ---
 export type ActionType = "attack" | "defend" | "special" | "counter" | "timeout";
 

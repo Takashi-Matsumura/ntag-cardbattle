@@ -23,7 +23,7 @@ export interface BattleTransportEvents {
   onError: (data: { message: string }) => void;
 }
 
-// バトルトランスポートインターフェース（Socket.io / P2P共通）
+// バトルトランスポートインターフェース（P2P用）
 export interface BattleTransport {
   connect(events: BattleTransportEvents): void;
   disconnect(): void;

@@ -8,39 +8,39 @@
 
 ## 概要
 
-- NTAGカードのUIDをiPhoneのNFCで読み取り、サーバに登録
-- 管理画面でカードにキャラクターを割り当て
-- QRコードでルームを共有して2人対戦、またはチュートリアルでCPU対戦
+- NTAGカードのUIDをiPhoneのNFCで読み取り
+- 設定画面の「カード登録（ガチャ）」でランダムキャラクターを割り当て（サーバ不要）
+- MultipeerConnectivity（Bluetooth/WiFi Direct）でP2Pローカル対戦
 
 ## 技術スタック
 
-| レイヤー         | 技術                                                        |
-| ---------------- | ----------------------------------------------------------- |
-| モバイルアプリ   | Expo (React Native) + NativeWind + react-native-nfc-manager |
-| バックエンド     | Next.js カスタムサーバ (TypeScript)                         |
-| リアルタイム通信 | Socket.io                                                   |
-| データベース     | PostgreSQL + Prisma ORM                                     |
-| インフラ         | Docker Compose                                              |
+| レイヤー       | 技術                                                        |
+| -------------- | ----------------------------------------------------------- |
+| モバイルアプリ | Expo (React Native) + NativeWind + react-native-nfc-manager |
+| 管理画面       | Next.js (TypeScript) + Tailwind CSS                         |
+| データベース   | SQLite + Prisma ORM                                         |
+| ローカルデータ | AsyncStorage（カードデータ・アプリ設定）                    |
+| P2P通信        | MultipeerConnectivity（Bluetooth/WiFi Direct）              |
 
 ## プロジェクト構成
 
 ```
 nfc-card-battle/
 ├── apps/
-│   ├── server/          # Next.js + Socket.io + Prisma
+│   ├── server/          # Next.js + Prisma + SQLite（管理画面・シミュレータ）
 │   │   ├── src/
 │   │   │   ├── app/     # Next.js App Router (API + 管理画面)
-│   │   │   ├── game/    # バトルエンジン・ルーム管理・Socket.ioイベント
-│   │   │   └── lib/     # Prisma クライアント
-│   │   └── prisma/      # スキーマ・マイグレーション・シード
+│   │   │   └── game/    # バトルエンジン・シミュレータ
+│   │   └── prisma/      # スキーマ・シード
 │   └── mobile/          # Expo アプリ
 │       ├── app/         # expo-router 画面
-│       │   ├── (tabs)/  # ホーム・マイカード
-│       │   └── battle/  # バトル画面・チュートリアル
+│       │   ├── (tabs)/  # ホーム・設定
+│       │   └── battle/  # バトル画面・チュートリアル・P2P対戦
 │       ├── components/  # BattleCard・HpBar 等の共通コンポーネント
-│       └── lib/         # Socket.io クライアント・NFC ユーティリティ
+│       ├── lib/         # NFC・P2Pトランスポート・ローカルカード管理
+│       └── modules/     # MultipeerConnectivity Expoモジュール
 └── packages/
-    └── shared/          # 共有型定義・定数
+    └── shared/          # 共有型定義・定数・バトルエンジン
 ```
 
 ## セットアップ
@@ -49,7 +49,6 @@ nfc-card-battle/
 
 - Node.js 18+
 - pnpm 9+
-- Docker (PostgreSQL 用)
 - Xcode (iOS実機ビルド用)
 - NTAGカード (NFC対応のもの)
 
@@ -59,32 +58,17 @@ nfc-card-battle/
 pnpm install
 ```
 
-### 2. データベースの起動と初期化
+### 2. データベースの初期化
 
 ```bash
-# PostgreSQL コンテナ起動
-pnpm docker:up
-
-# スキーマ反映
+# SQLiteにスキーマ反映
 pnpm db:push
 
 # 初期キャラクターデータ投入
 pnpm db:seed
 ```
 
-### 3. 環境変数の設定
-
-```bash
-# サーバ
-cp apps/server/.env.example apps/server/.env
-
-# モバイル
-cp apps/mobile/.env.example apps/mobile/.env
-```
-
-モバイルアプリからサーバに接続するため、`apps/mobile/.env` の `EXPO_PUBLIC_SERVER_URL` をサーバのアドレスに設定してください。ローカル開発ではngrokなどのトンネルが便利です。
-
-### 4. サーバ起動
+### 3. サーバ起動
 
 ```bash
 pnpm dev:server
@@ -92,7 +76,7 @@ pnpm dev:server
 # 管理画面: http://localhost:3000/admin/cards
 ```
 
-### 5. モバイルアプリ起動
+### 4. モバイルアプリ起動
 
 ```bash
 pnpm dev:mobile
@@ -110,22 +94,23 @@ npx expo prebuild --platform ios
 
 ### カードの準備
 
-1. モバイルアプリの「マイカード」タブでNTAGカードをスキャンして登録
-2. 管理画面 (`/admin/cards`) でカードにキャラクターを割り当て
+1. 設定画面の「カード登録（ガチャ）」をタップ
+2. NTAGカードをスキャン → ランダムキャラクターが割り当てられる
+3. 登録済みカード一覧でキャラ名・レベル・ステータスを確認
 
 ### チュートリアル (CPU対戦)
 
 1. ホーム画面の「チュートリアル」をタップ
-2. NFCカードをスキャンしてキャラクターをセット
+2. NFCカードをスキャン（または「カードなしで体験」でデモモード）
 3. CPUにはランダムでキャラクターが割り当てられる
 4. ターン制バトル開始
 
-### 対人対戦
+### P2Pローカル対戦
 
-1. ホーム画面の「対戦」をタップ → ルーム作成 + QRコード表示
-2. 相手: 同じく「対戦」→「相手のQRを読み取る」でカメラスキャン
-3. 両者がNFCカードをスキャンするとバトル開始
-4. ターン制で攻撃/防御を交互に繰り返す
+1. ホーム画面の「ローカル対戦」をタップ
+2. 「ホストとして始める」or「相手を探す」を選択
+3. MultipeerConnectivityでピア検出 → 自動接続
+4. NFCカードをスキャン → バトル開始
 
 ## バトルシステム
 
@@ -151,16 +136,13 @@ npx expo prebuild --platform ios
 
 ## API
 
-| エンドポイント        | メソッド | 説明                                         |
-| --------------------- | -------- | -------------------------------------------- |
-| `/api/cards`          | GET      | 登録済みカード一覧                           |
-| `/api/cards`          | POST     | カード登録 (`{ id: "UID" }`)                 |
-| `/api/cards`          | PATCH    | キャラクター割当 (`{ cardId, characterId }`) |
-| `/api/characters`     | GET      | キャラクター一覧                             |
-| `/api/characters`     | POST     | キャラクター作成                             |
-| `/api/characters/:id` | PATCH    | キャラクター更新                             |
-| `/api/characters/:id` | DELETE   | キャラクター削除                             |
-| `/api/simulator`      | POST     | バトルシミュレーション実行                   |
+| エンドポイント        | メソッド | 説明                       |
+| --------------------- | -------- | -------------------------- |
+| `/api/characters`     | GET      | キャラクター一覧           |
+| `/api/characters`     | POST     | キャラクター作成           |
+| `/api/characters/:id` | PATCH    | キャラクター更新           |
+| `/api/characters/:id` | DELETE   | キャラクター削除           |
+| `/api/simulator`      | POST     | バトルシミュレーション実行 |
 
 ## 開発コマンド一覧
 
@@ -168,15 +150,22 @@ npx expo prebuild --platform ios
 pnpm install            # 依存関係インストール
 pnpm dev:server         # サーバ起動
 pnpm dev:mobile         # Expo アプリ起動
-pnpm docker:up          # PostgreSQL 起動
-pnpm docker:down        # PostgreSQL 停止
 pnpm db:push            # スキーマを DB に反映
 pnpm db:seed            # シードデータ投入
-pnpm db:migrate         # マイグレーション実行
+pnpm db:studio          # Prisma Studio 起動
 pnpm build:server       # サーバビルド
 ```
 
 ## アップデートログ
+
+### 2026-02-22: リファクタリング・セキュリティ強化
+
+- **サーバ簡素化**: カスタムHTTPサーバ（`server.ts`）を削除し、標準 `next dev` / `next start` に移行
+- **デッドコード削除**: オンラインモード・サーバ同期の名残コード（`Card` 型、`cacheCardFromServer`、`tookDamageFromResult`）を除去
+- **シミュレータUIバグ修正**: 防御倍率のデフォルト値が共有定数（1.5）と不一致だった問題を修正
+- **APIセキュリティ強化**: 全APIエンドポイントに入力バリデーション・エラーハンドリングを追加（不正JSON→400、レコード不在→404、unique制約違反→409）
+- **不要ファイル削除**: `.env.example`（SQLite移行により不要）、未使用 `expo-secure-store` プラグイン参照
+- **ドキュメント更新**: README・開発コマンドを現状のアーキテクチャに合わせて全面改訂
 
 ### 2026-02-19: バトルUI改善・スワイプ操作カード導入
 

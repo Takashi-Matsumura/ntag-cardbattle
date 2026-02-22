@@ -134,12 +134,3 @@ export function getSeKeyForResult(
   }
 }
 
-/** ターン結果でダメージを受けたかどうか */
-export function tookDamageFromResult(
-  resultType: ResultType,
-  damageToAttacker: number,
-  damageToDefender: number,
-  isAttacker: boolean
-): boolean {
-  return isAttacker ? damageToAttacker > 0 : damageToDefender > 0;
-}

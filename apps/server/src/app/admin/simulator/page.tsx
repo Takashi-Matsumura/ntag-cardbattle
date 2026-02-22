@@ -59,7 +59,7 @@ interface SimulationResult {
 // --- デフォルト値 ---
 
 const DEFAULT_PARAMS: SimParams = {
-  defenseMultiplier: 2,
+  defenseMultiplier: 1.5,
   specialMultiplier: 1.8,
   specialCooldown: 3,
   counterSuccessRate: 0.3,
